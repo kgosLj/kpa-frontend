@@ -133,7 +133,11 @@ const transform: AxiosTransform = {
   // 响应错误处理
   responseInterceptorsCatch: (error: any, instance: AxiosInstance) => {
     const { config } = error;
+    // Do not retry on 4xx errors (client errors)
     if (!config || !config.requestOptions.retry) return Promise.reject(error);
+    if (error.response && error.response.status >= 400 && error.response.status < 500) {
+      return Promise.reject(error);
+    }
 
     config.retryCount = config.retryCount || 0;
 
@@ -157,7 +161,7 @@ function createAxios(opt?: Partial<CreateAxiosOptions>) {
       <CreateAxiosOptions>{
         // https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication#authentication_schemes
         // 例如: authenticationScheme: 'Bearer'
-        authenticationScheme: '',
+        authenticationScheme: 'Bearer',
         // 超时
         timeout: 10 * 1000,
         // 携带Cookie

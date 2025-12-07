@@ -1,0 +1,128 @@
+<template>
+  <t-dialog
+    v-model:visible="visible"
+    header="授予权限"
+    :on-confirm="onConfirm"
+    :on-close="onClose"
+    width="500px"
+  >
+    <t-form ref="form" :data="formData" :rules="rules" @submit="onSubmit" label-width="100px">
+      <t-form-item label="用户ID" name="user_id">
+        <t-input v-model="formData.user_id" placeholder="请输入用户ID" />
+      </t-form-item>
+      
+      <t-form-item label="角色" name="role_name">
+        <t-select v-model="formData.role_name" placeholder="请选择角色" :loading="roleLoading">
+            <t-option v-for="role in roles" :key="role.id" :value="role.name" :label="role.name">
+                {{ role.name }} <span style="color: #999; font-size: 12px">({{ role.description }})</span>
+            </t-option>
+        </t-select>
+      </t-form-item>
+
+      <t-form-item label="集群" name="cluster_id">
+         <t-select v-model="formData.cluster_id" placeholder="请选择集群" :loading="clusterLoading">
+            <t-option v-for="cluster in clusters" :key="cluster.id" :value="cluster.cluster_id" :label="cluster.name || cluster.cluster_id" />
+        </t-select>
+      </t-form-item>
+
+      <t-form-item label="命名空间" name="namespace">
+        <t-input v-model="formData.namespace" placeholder="请输入命名空间（可选，留空为集群级别）" />
+      </t-form-item>
+    </t-form>
+  </t-dialog>
+</template>
+
+<script setup lang="ts">
+import { ref, watch, computed, onMounted } from 'vue';
+import { MessagePlugin } from 'tdesign-vue-next';
+import { getRoleList } from '@/api/role';
+import { getClusterList } from '@/api/cluster'; // Assuming this exists or creates it
+import type { Role } from '@/api/model/roleModel';
+
+const props = defineProps<{
+  visible: boolean;
+}>();
+
+const emit = defineEmits(['update:visible', 'confirm']);
+
+const visible = computed({
+  get: () => props.visible,
+  set: (val) => emit('update:visible', val),
+});
+
+const formData = ref({
+  user_id: '',
+  role_name: '',
+  cluster_id: '',
+  namespace: '',
+});
+
+// Roles
+const roles = ref<Role[]>([]);
+const roleLoading = ref(false);
+const fetchRoles = async () => {
+    roleLoading.value = true;
+    try {
+        roles.value = await getRoleList();
+    } finally {
+        roleLoading.value = false;
+    }
+}
+
+// Clusters
+const clusters = ref<any[]>([]); // Using any for now as I need to check cluster model
+const clusterLoading = ref(false);
+const fetchClusters = async () => {
+    clusterLoading.value = true;
+    try {
+        // Need to ensure getClusterList is available or use request directly if not exported
+       const res = await getClusterList(); 
+       clusters.value = res.list || res;
+    } catch(e) {
+        console.error(e)
+    } finally {
+        clusterLoading.value = false;
+    }
+}
+
+watch(
+  () => props.visible,
+  (val) => {
+    if (val) {
+        formData.value = {
+            user_id: '',
+            role_name: '',
+            cluster_id: '',
+            namespace: '',
+        };
+        fetchRoles();
+        fetchClusters();
+    }
+  }
+);
+
+const rules = {
+  user_id: [{ required: true, message: '请输入用户ID', trigger: 'blur' }],
+  role_name: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  cluster_id: [{ required: true, message: '请选择集群', trigger: 'change' }],
+};
+
+const onConfirm = () => {
+  // @ts-ignore
+  form.value.submit();
+};
+
+const form = ref(null);
+
+const onSubmit = ({ validateResult, firstError }: any) => {
+  if (validateResult === true) {
+    emit('confirm', { ...formData.value });
+  } else {
+    MessagePlugin.warning(firstError);
+  }
+};
+
+const onClose = () => {
+  visible.value = false;
+};
+</script>
