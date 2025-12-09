@@ -19,7 +19,7 @@
           <t-tag v-else theme="default" variant="light">普通用户</t-tag>
         </template>
         <template #create_time="{ row }">
-          {{ formatTime(row.create_time) }}
+          {{ formatTime(row.created_at) }}
         </template>
       </t-table>
     </t-card>
@@ -43,7 +43,7 @@ const COLUMNS: PrimaryTableCol<TableRowData>[] = [
   { title: '用户ID', colKey: 'id', width: 250 },
   { title: '用户名', colKey: 'username', width: 150 },
   { title: '角色', colKey: 'is_super_admin', width: 150 },
-  { title: '创建时间', colKey: 'create_time', width: 200 },
+  { title: '创建时间', colKey: 'created_at', width: 200 },
 ];
 
 const data = ref<User[]>([]);

@@ -18,6 +18,11 @@ const defaultRouterList: Array<RouteRecordRaw> = [
     component: () => import('@/pages/login/index.vue'),
   },
   {
+    path: '/change-password',
+    name: 'change-password',
+    component: () => import('@/pages/login/change-password.vue'),
+  },
+  {
     path: '/',
     redirect: '/dashboard/base',
   },

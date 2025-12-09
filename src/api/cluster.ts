@@ -5,10 +5,10 @@ const Api = {
 };
 
 export interface Cluster {
-    cluster_id: string;
+    id: string;
     name: string;
-    status: string;
-    version: string;
+    status: string; // Note: swagger says integer, but frontend might expect string/enum? Keeping string for now or check usages.
+    version: string; // swagger doesn't show version in ClusterResponse? id, name, provider, region, status, resources...
     nodes_count: number;
 }
 

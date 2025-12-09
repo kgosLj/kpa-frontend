@@ -8,8 +8,8 @@ export interface User {
     id: string;
     username: string;
     is_super_admin: boolean;
-    create_time: string;
-    update_time: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface CreateUserRequest {

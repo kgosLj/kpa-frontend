@@ -13,11 +13,19 @@ export interface LoginResponse {
     refresh_token: string;
     role: string;
     clusters: string[];
+    need_change_password?: boolean;
+}
+
+export interface ChangePasswordRequest {
+    old_password?: string;
+    new_password?: string;
+    confirm_password?: string; // Optional frontend check, backend only needs new_password
 }
 
 const Api = {
     Login: '/auth/login',
     Refresh: '/auth/refresh',
+    ChangePassword: '/auth/change-password',
 };
 
 export function login(data: LoginRequest) {
@@ -35,5 +43,12 @@ export function refreshToken(token: string) {
         data: {
             refresh_token: token,
         },
+    });
+}
+
+export function changePassword(data: ChangePasswordRequest) {
+    return request.post({
+        url: Api.ChangePassword,
+        data,
     });
 }

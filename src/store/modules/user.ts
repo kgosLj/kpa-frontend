@@ -7,6 +7,7 @@ import type { UserInfo } from '@/types/interface';
 const InitUserInfo: UserInfo = {
   name: '', // 用户名，用于展示在页面右上角头像处
   roles: [], // 前端权限模型使用 如果使用请配置modules/permission-fe.ts使用
+  needChangePassword: false,
 };
 
 export const useUserStore = defineStore('user', {
@@ -29,12 +30,15 @@ export const useUserStore = defineStore('user', {
       });
 
       if (res.access_token) {
+        console.log('Login Success. Response:', res); // DEBUG LOG
         this.token = res.access_token;
         // 存储用户信息，因为后端没有/me接口
         this.userInfo = {
           name: userInfo.account as string || userInfo.phone as string,
           roles: [res.role],
+          needChangePassword: res.need_change_password || false,
         };
+        console.log('Store UserInfo updated:', this.userInfo); // DEBUG LOG
       } else {
         throw new Error('Login failed: Token not received');
       }

@@ -71,10 +71,7 @@ const searchClusterId = ref('');
 const fetchData = async () => {
     if (!searchUserId.value && !searchClusterId.value) {
         // As per API design, we need either user_id or cluster_id. 
-        // For UX, maybe we should ask user to search first, or list for valid "default" cluster?
-        // Let's force search or just don't load initially if empty.
-        // Actually, let's try to load for a default cluster if possible, but we don't know it.
-        // Let's just return empty and wait for search.
+        // For UX, we return empty list if no search criteria
         data.value = [];
         return; 
     }
@@ -83,19 +80,22 @@ const fetchData = async () => {
   try {
     let res: RoleBinding[] = [];
     if (searchUserId.value) {
-        res = await getRoleBindingListByUser(searchUserId.value);
+        const response = await getRoleBindingListByUser(searchUserId.value);
+        res = Array.isArray(response) ? response : [];
     } else if (searchClusterId.value) {
-        res = await getRoleBindingListByCluster(searchClusterId.value);
+        const response = await getRoleBindingListByCluster(searchClusterId.value);
+        res = Array.isArray(response) ? response : [];
     }
     
     // Client-side filtering if both present?
-    if (searchUserId.value && searchClusterId.value) {
+    if (searchUserId.value && searchClusterId.value && Array.isArray(res)) {
         res = res.filter(item => item.cluster_id === searchClusterId.value);
     }
 
     data.value = res;
   } catch (e) {
     console.error(e);
+    data.value = []; // ensure data is reset on error
   } finally {
     dataLoading.value = false;
   }
@@ -130,9 +130,16 @@ const onDialogConfirm = async (formData: any) => {
     await grantRole(formData);
     MessagePlugin.success('授权成功');
     dialogVisible.value = false;
-    // Auto refresh if matches search
-    if (searchUserId.value === formData.user_id || searchClusterId.value === formData.cluster_id) {
-        fetchData();
+    
+    // Auto fill search and refresh to show the new grant
+    if (formData.user_id) {
+        searchUserId.value = formData.user_id;
+        searchClusterId.value = ''; 
+        
+        // Add a small delay to ensure backend data consistency
+        setTimeout(() => {
+            fetchData();
+        }, 500);
     }
   } catch (e: any) {
     MessagePlugin.error(e.message || '授权失败');

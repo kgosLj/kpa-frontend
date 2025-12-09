@@ -7,8 +7,12 @@
     width="500px"
   >
     <t-form ref="form" :data="formData" :rules="rules" @submit="onSubmit" label-width="100px">
-      <t-form-item label="用户ID" name="user_id">
-        <t-input v-model="formData.user_id" placeholder="请输入用户ID" />
+      <t-form-item label="用户" name="user_id">
+        <t-select v-model="formData.user_id" placeholder="请选择用户" :loading="userLoading" filterable>
+            <t-option v-for="user in users" :key="user.id" :value="user.id" :label="user.username + ' (' + user.id + ')'">
+                 {{ user.username }} <span style="color: #999; font-size: 12px">({{ user.id }})</span>
+            </t-option>
+        </t-select>
       </t-form-item>
       
       <t-form-item label="角色" name="role_name">
@@ -21,7 +25,7 @@
 
       <t-form-item label="集群" name="cluster_id">
          <t-select v-model="formData.cluster_id" placeholder="请选择集群" :loading="clusterLoading">
-            <t-option v-for="cluster in clusters" :key="cluster.id" :value="cluster.cluster_id" :label="cluster.name || cluster.cluster_id" />
+            <t-option v-for="cluster in clusters" :key="cluster.id" :value="cluster.id" :label="cluster.name || cluster.id" />
         </t-select>
       </t-form-item>
 
@@ -34,10 +38,12 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin, FormRules, ValidateTriggerType } from 'tdesign-vue-next';
 import { getRoleList } from '@/api/role';
-import { getClusterList } from '@/api/cluster'; // Assuming this exists or creates it
+import { getClusterList } from '@/api/cluster';
+import { getUserList } from '@/api/user';
 import type { Role } from '@/api/model/roleModel';
+import type { User } from '@/api/user';
 
 const props = defineProps<{
   visible: boolean;
@@ -57,6 +63,19 @@ const formData = ref({
   namespace: '',
 });
 
+// Users
+const users = ref<User[]>([]);
+const userLoading = ref(false);
+const fetchUsers = async () => {
+    userLoading.value = true;
+    try {
+        const res = await getUserList();
+        users.value = res.items;
+    } finally {
+        userLoading.value = false;
+    }
+}
+
 // Roles
 const roles = ref<Role[]>([]);
 const roleLoading = ref(false);
@@ -75,9 +94,8 @@ const clusterLoading = ref(false);
 const fetchClusters = async () => {
     clusterLoading.value = true;
     try {
-        // Need to ensure getClusterList is available or use request directly if not exported
        const res = await getClusterList(); 
-       clusters.value = res.list || res;
+       clusters.value = res;
     } catch(e) {
         console.error(e)
     } finally {
@@ -95,16 +113,17 @@ watch(
             cluster_id: '',
             namespace: '',
         };
+        fetchUsers();
         fetchRoles();
         fetchClusters();
     }
   }
 );
 
-const rules = {
-  user_id: [{ required: true, message: '请输入用户ID', trigger: 'blur' }],
-  role_name: [{ required: true, message: '请选择角色', trigger: 'change' }],
-  cluster_id: [{ required: true, message: '请选择集群', trigger: 'change' }],
+const rules: FormRules = {
+  user_id: [{ required: true, message: '请选择用户', trigger: 'change' as ValidateTriggerType }],
+  role_name: [{ required: true, message: '请选择角色', trigger: 'change' as ValidateTriggerType }],
+  cluster_id: [{ required: true, message: '请选择集群', trigger: 'change' as ValidateTriggerType }],
 };
 
 const onConfirm = () => {

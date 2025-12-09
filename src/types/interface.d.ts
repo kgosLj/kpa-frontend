@@ -20,10 +20,10 @@ export interface MenuRoute {
   title?: string | Record<string, string>;
   name?: string;
   icon?:
-    | string
-    | {
-        render: () => void;
-      };
+  | string
+  | {
+    render: () => void;
+  };
   redirect?: string;
   children: MenuRoute[];
   meta: RouteMeta;
@@ -34,6 +34,7 @@ export type ModeType = 'dark' | 'light';
 export interface UserInfo {
   name: string;
   roles: string[];
+  needChangePassword?: boolean;
 }
 
 export interface NotificationItem {

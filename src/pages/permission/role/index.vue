@@ -62,7 +62,7 @@ const fetchData = async () => {
   dataLoading.value = true;
   try {
     const res = await getRoleList();
-    data.value = res; // API returns array directly based on my implementation plan, need check api.ts
+    data.value = res;
   } catch (e) {
     console.error(e);
   } finally {

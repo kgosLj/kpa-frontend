@@ -26,6 +26,14 @@ router.beforeEach(async (to, from, next) => {
     try {
       await userStore.getUserInfo();
 
+      console.log('Permission Check:', { needChange: userStore.userInfo.needChangePassword, path: to.path }); // DEBUG LOG
+
+      if (userStore.userInfo.needChangePassword && to.path !== '/change-password' && to.path !== '/login') {
+        console.log('Redirecting to /change-password'); // DEBUG LOG
+        next('/change-password');
+        return;
+      }
+
       const { routesLoaded } = permissionStore;
 
       if (!routesLoaded) {

@@ -19,7 +19,3 @@ export interface UpdateRoleRequest {
     description?: string;
     permissions?: string[];
 }
-
-export interface RoleListResult {
-    list: Role[];
-}
