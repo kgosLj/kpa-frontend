@@ -6,7 +6,7 @@
           <t-button @click="handleGrant">授予权限</t-button>
         </div>
         <div class="search-input">
-             <t-input v-model="searchUserId" placeholder="请输入用户ID搜索" clearable @enter="handleSearch" style="width: 200px; margin-right: 10px">
+             <t-input v-model="searchUsername" placeholder="请输入用户名搜索" clearable @enter="handleSearch" style="width: 200px; margin-right: 10px">
                 <template #suffix-icon>
                   <search-icon />
                 </template>
@@ -47,7 +47,7 @@ import type { PrimaryTableCol, TableRowData } from 'tdesign-vue-next';
 import { ref, onMounted } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { SearchIcon } from 'tdesign-icons-vue-next';
-import { getRoleBindingListByUser, getRoleBindingListByCluster, grantRole, revokeRole } from '@/api/role-binding';
+import { getRoleBindingList, grantRole, revokeRole } from '@/api/role-binding';
 import type { RoleBinding } from '@/api/model/roleBindingModel';
 import GrantDialog from './components/GrantDialog.vue';
 
@@ -55,7 +55,7 @@ const COLUMNS: PrimaryTableCol<TableRowData>[] = [
   { title: '用户ID', colKey: 'user_id', width: 200 },
   { title: '用户名', colKey: 'username', width: 150 },
   { title: '角色', colKey: 'role_name', width: 150 },
-  { title: '集群', colKey: 'cluster_id', width: 200 },
+  { title: '集群', colKey: 'cluster_name', width: 200 },
   { title: '命名空间', colKey: 'namespace', cell: (h: any, { row }: { row: any }) => row.namespace || '全部 (All)' },
   { title: '绑定时间', colKey: 'create_time', width: 200 },
   { title: '操作', colKey: 'op', width: 100, fixed: 'right' },
@@ -64,42 +64,37 @@ const COLUMNS: PrimaryTableCol<TableRowData>[] = [
 const data = ref<RoleBinding[]>([]);
 const dataLoading = ref(false);
 const dialogVisible = ref(false);
-const searchUserId = ref('');
+const searchUsername = ref('');
 const searchClusterId = ref('');
 
-// Initial load? maybe load for current user or empty
+// 获取数据
 const fetchData = async () => {
-    if (!searchUserId.value && !searchClusterId.value) {
-        // As per API design, we need either user_id or cluster_id. 
-        // For UX, we return empty list if no search criteria
-        data.value = [];
-        return; 
-    }
-
   dataLoading.value = true;
   try {
-    let res: RoleBinding[] = [];
-    if (searchUserId.value) {
-        const response = await getRoleBindingListByUser(searchUserId.value);
-        res = Array.isArray(response) ? response : [];
-    } else if (searchClusterId.value) {
-        const response = await getRoleBindingListByCluster(searchClusterId.value);
-        res = Array.isArray(response) ? response : [];
+    const params: { username?: string; cluster_id?: string } = {};
+    
+    if (searchUsername.value) {
+      params.username = searchUsername.value;
+    }
+    if (searchClusterId.value) {
+      params.cluster_id = searchClusterId.value;
     }
     
-    // Client-side filtering if both present?
-    if (searchUserId.value && searchClusterId.value && Array.isArray(res)) {
-        res = res.filter(item => item.cluster_id === searchClusterId.value);
-    }
-
-    data.value = res;
-  } catch (e) {
-    console.error(e);
-    data.value = []; // ensure data is reset on error
+    const res = await getRoleBindingList(params);
+    data.value = Array.isArray(res) ? res : [];
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '加载失败');
+    console.error('加载权限绑定失败:', e);
+    data.value = [];
   } finally {
     dataLoading.value = false;
   }
 };
+
+// 默认加载所有数据
+onMounted(() => {
+    fetchData();
+});
 
 const handleSearch = () => {
     fetchData();
@@ -113,15 +108,15 @@ const handleRevoke = async (row: RoleBinding) => {
   try {
     await revokeRole({
         user_id: row.user_id,
-        role_name: row.role_name || '', // Note: role_name might be missing if API only gives ID, need check backend. 
-        // Backend `RoleBindingResponse` has `RoleName`.
+        role_name: row.role_name || '',
         cluster_id: row.cluster_id,
         namespace: row.namespace
     });
     MessagePlugin.success('撤销成功');
     fetchData();
-  } catch (e) {
-    console.error(e);
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '撤销失败');
+    console.error('撤销权限失败:', e);
   }
 };
 
@@ -131,19 +126,13 @@ const onDialogConfirm = async (formData: any) => {
     MessagePlugin.success('授权成功');
     dialogVisible.value = false;
     
-    // Auto fill search and refresh to show the new grant
-    if (formData.user_id) {
-        searchUserId.value = formData.user_id;
-        searchClusterId.value = ''; 
-        
-        // Add a small delay to ensure backend data consistency
-        setTimeout(() => {
-            fetchData();
-        }, 500);
-    }
+    // 刷新列表
+    setTimeout(() => {
+        fetchData();
+    }, 500);
   } catch (e: any) {
     MessagePlugin.error(e.message || '授权失败');
-    console.error(e);
+    console.error('授权失败:', e);
   }
 };
 

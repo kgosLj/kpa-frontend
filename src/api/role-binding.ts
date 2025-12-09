@@ -7,6 +7,14 @@ const Api = {
     Revoke: '/role-bindings/revoke',
 };
 
+// 获取所有角色绑定（支持过滤）
+export function getRoleBindingList(params?: { username?: string; cluster_id?: string }) {
+    return request.get<RoleBinding[]>({
+        url: Api.RoleBinding,
+        params,
+    });
+}
+
 // 获取指定用户的绑定列表
 export function getRoleBindingListByUser(userId: string) {
     return request.get<RoleBinding[]>({

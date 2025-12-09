@@ -43,16 +43,33 @@ const transform: AxiosTransform = {
       throw new Error('请求接口错误');
     }
 
-    //  这里 code为 后台统一的字段，需要在 types.ts内修改为项目自己的接口返回格式
-    const { code } = data;
+    // 这里 code为 后台统一的字段，需要在 types.ts内修改为项目自己的接口返回格式
+    // 兼容后端可能返回的不同字段名：code, status, error_code 等
+    const responseData = data as any;
+    const code = responseData.code ?? responseData.error_code;
+    const message = responseData.message ?? responseData.msg ?? responseData.error ?? '请求失败';
+    const status = responseData.status;
 
     // 这里逻辑可以根据项目进行修改
-    const hasSuccess = data && code === 0;
+    // 成功的情况：
+    // 1. code === 0
+    // 2. status === 'ok' (后端某些接口返回这种格式)
+    // 3. 没有 code 字段（直接返回数据）
+    const hasSuccess = data && (
+      code === 0 ||
+      status === 'ok' ||
+      status === 'success' ||
+      (code === undefined && status !== 'error' && status !== 'fail')
+    );
+
     if (hasSuccess) {
-      return data.data;
+      // 如果有 data 字段则返回 data，否则返回整个响应
+      return responseData.data !== undefined ? responseData.data : data;
     }
 
-    throw new Error(`请求接口错误, 错误码: ${code}`);
+    // 抛出错误，包含错误码和错误信息
+    throw new Error(`${message} (错误码: ${code ?? status ?? 'unknown'})`);
+
   },
 
   // 请求前处理配置
