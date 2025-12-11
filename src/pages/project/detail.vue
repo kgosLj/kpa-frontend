@@ -37,16 +37,6 @@
             <t-tag v-else-if="row.environment === 'dev'" theme="primary">开发</t-tag>
             <t-tag v-else>{{ row.environment }}</t-tag>
           </template>
-          <template #resources="{ row }">
-            <t-dropdown :options="getResourceOptions(row)">
-              <t-button theme="primary" variant="outline" size="small">
-                管理资源
-                <template #suffix>
-                  <chevron-down-icon />
-                </template>
-              </t-button>
-            </t-dropdown>
-          </template>
         </t-table>
       </div>
     </t-card>
@@ -54,13 +44,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
-import { ChevronDownIcon } from 'tdesign-icons-vue-next';
 import { getProject, getProjectNamespaces, type Project, type ProjectNamespace } from '@/api/project';
 import { getClusterList, type Cluster } from '@/api/cluster';
-import type { DropdownOption } from 'tdesign-vue-next';
 
 const route = useRoute();
 const router = useRouter();
@@ -76,7 +64,6 @@ const NAMESPACE_COLUMNS = [
   { title: '命名空间', colKey: 'namespace', width: 200 },
   { title: '环境', colKey: 'environment', width: 120 },
   { title: '绑定时间', colKey: 'create_time', width: 180 },
-  { title: '操作', colKey: 'resources', width: 150, fixed: 'right' as const },
 ];
 
 // 获取集群名称
@@ -89,46 +76,6 @@ const getClusterName = (clusterId: string) => {
 const formatTime = (time?: string) => {
   if (!time) return '-';
   return new Date(time).toLocaleString('zh-CN');
-};
-
-// 获取资源管理选项
-const getResourceOptions = (namespace: ProjectNamespace): DropdownOption[] => {
-  return [
-    {
-      content: 'Deployments',
-      value: 'deployments',
-      onClick: () => navigateToResource(namespace, 'deployments'),
-    },
-    {
-      content: 'Services',
-      value: 'services',
-      onClick: () => navigateToResource(namespace, 'services'),
-    },
-    {
-      content: 'ConfigMaps',
-      value: 'configmaps',
-      onClick: () => navigateToResource(namespace, 'configmaps'),
-    },
-    {
-      content: 'Secrets',
-      value: 'secrets',
-      onClick: () => navigateToResource(namespace, 'secrets'),
-    },
-  ];
-};
-
-// 导航到资源管理页面
-const navigateToResource = (namespace: ProjectNamespace, resourceType: string) => {
-  router.push({
-    name: `ProjectResource${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)}`,
-    params: {
-      id: projectId,
-    },
-    query: {
-      clusterId: namespace.cluster_id,
-      namespace: namespace.namespace,
-    },
-  });
 };
 
 // 返回项目列表

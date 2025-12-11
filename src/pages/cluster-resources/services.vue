@@ -7,7 +7,7 @@
           <t-breadcrumb>
             <t-breadcrumb-item @click="goToProjectList">项目列表</t-breadcrumb-item>
             <t-breadcrumb-item @click="goToProjectDetail">{{ projectName }}</t-breadcrumb-item>
-            <t-breadcrumb-item>Deployments</t-breadcrumb-item>
+            <t-breadcrumb-item>Services</t-breadcrumb-item>
           </t-breadcrumb>
         </div>
         <div class="context-info">
@@ -26,7 +26,7 @@
         </t-button>
         <t-input
           v-model="searchKeyword"
-          placeholder="搜索 Deployment 名称"
+          placeholder="搜索 Service 名称"
           clearable
           style="width: 300px"
         >
@@ -36,7 +36,7 @@
         </t-input>
       </div>
 
-      <!-- Deployment 列表 -->
+      <!-- Service 列表 -->
       <t-table
         :data="filteredData"
         :columns="COLUMNS"
@@ -45,26 +45,26 @@
         :hover="true"
       >
         <template #name="{ row }">
-          <t-link theme="primary" @click="handleViewPods(row)">{{ row.metadata.name }}</t-link>
+          <span class="resource-name">{{ row.metadata.name }}</span>
         </template>
-        <template #replicas="{ row }">
-          <span>{{ row.status?.readyReplicas || 0 }} / {{ row.spec?.replicas || 0 }}</span>
+        <template #type="{ row }">
+          <t-tag theme="default">{{ row.spec?.type || 'ClusterIP' }}</t-tag>
         </template>
-        <template #images="{ row }">
-          <div class="image-list">
+        <template #clusterIP="{ row }">
+          {{ row.spec?.clusterIP || '-' }}
+        </template>
+        <template #ports="{ row }">
+          <div class="port-list">
             <t-tag
-              v-for="(image, idx) in getImages(row)"
+              v-for="(port, idx) in getPorts(row)"
               :key="idx"
               theme="default"
               variant="outline"
               size="small"
             >
-              {{ image }}
+              {{ port }}
             </t-tag>
           </div>
-        </template>
-        <template #status="{ row }">
-          <t-tag :theme="getStatusTheme(row)">{{ getStatus(row) }}</t-tag>
         </template>
         <template #age="{ row }">
           {{ formatAge(row.metadata.creationTimestamp) }}
@@ -72,10 +72,8 @@
         <template #op="{ row }">
           <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
           <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleScale(row)">扩缩容</t-link>
-          <t-divider layout="vertical" />
           <t-popconfirm
-            content="确定删除该 Deployment 吗？此操作不可恢复。"
+            content="确定删除该 Service 吗？此操作不可恢复。"
             @confirm="handleDelete(row)"
           >
             <t-link theme="danger">删除</t-link>
@@ -87,35 +85,13 @@
     <!-- 详情对话框 -->
     <t-dialog
       v-model:visible="detailVisible"
-      header="Deployment 详情"
+      header="Service 详情"
       width="800px"
       :footer="false"
     >
       <div class="detail-content">
         <pre class="yaml-content">{{ detailYaml }}</pre>
       </div>
-    </t-dialog>
-
-    <!-- 扩缩容对话框 -->
-    <t-dialog
-      v-model:visible="scaleVisible"
-      header="扩缩容"
-      :confirm-btn="{ content: '确定', loading: scaleLoading }"
-      @confirm="onConfirmScale"
-    >
-      <t-form :data="scaleForm" label-align="right" :label-width="100">
-        <t-form-item label="当前副本数">
-          <span>{{ scaleForm.currentReplicas }}</span>
-        </t-form-item>
-        <t-form-item label="目标副本数" name="replicas">
-          <t-input-number
-            v-model="scaleForm.replicas"
-            :min="0"
-            :max="100"
-            placeholder="请输入目标副本数"
-          />
-        </t-form-item>
-      </t-form>
     </t-dialog>
   </div>
 </template>
@@ -125,12 +101,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon } from 'tdesign-icons-vue-next';
-import {
-  getDeployments,
-  deleteDeployment,
-  scaleDeployment,
-  type Deployment,
-} from '@/api/k8s-resources';
+import { getServices, deleteService, type Service } from '@/api/k8s-resources';
 import { getProject } from '@/api/project';
 import { getClusterList } from '@/api/cluster';
 import * as yaml from 'js-yaml';
@@ -144,17 +115,17 @@ const namespace = route.query.namespace as string;
 
 const projectName = ref('');
 const clusterName = ref('');
-const data = ref<Deployment[]>([]);
+const data = ref<Service[]>([]);
 const loading = ref(false);
 const searchKeyword = ref('');
 
 const COLUMNS = [
-  { title: '名称', colKey: 'name', width: 250 },
-  { title: '副本数', colKey: 'replicas', width: 120 },
-  { title: '镜像', colKey: 'images', ellipsis: true },
-  { title: '状态', colKey: 'status', width: 120 },
+  { title: '名称', colKey: 'name', width: 200 },
+  { title: '类型', colKey: 'type', width: 120 },
+  { title: 'Cluster IP', colKey: 'clusterIP', width: 150 },
+  { title: '端口', colKey: 'ports', ellipsis: true },
   { title: '创建时间', colKey: 'age', width: 150 },
-  { title: '操作', colKey: 'op', width: 200, fixed: 'right' as const },
+  { title: '操作', colKey: 'op', width: 150, fixed: 'right' as const },
 ];
 
 // 过滤数据
@@ -169,39 +140,16 @@ const filteredData = computed(() => {
 const detailVisible = ref(false);
 const detailYaml = ref('');
 
-// 扩缩容对话框
-const scaleVisible = ref(false);
-const scaleLoading = ref(false);
-const scaleForm = ref({
-  name: '',
-  currentReplicas: 0,
-  replicas: 0,
-});
-
-// 获取镜像列表
-const getImages = (deployment: Deployment) => {
-  const containers = deployment.spec?.template?.spec?.containers || [];
-  return containers.map(c => c.image);
-};
-
-// 获取状态
-const getStatus = (deployment: Deployment) => {
-  const replicas = deployment.spec?.replicas || 0;
-  const readyReplicas = deployment.status?.readyReplicas || 0;
-  
-  if (readyReplicas === replicas) return '运行中';
-  if (readyReplicas === 0) return '未就绪';
-  return '部分就绪';
-};
-
-// 获取状态主题
-const getStatusTheme = (deployment: Deployment) => {
-  const replicas = deployment.spec?.replicas || 0;
-  const readyReplicas = deployment.status?.readyReplicas || 0;
-  
-  if (readyReplicas === replicas) return 'success';
-  if (readyReplicas === 0) return 'danger';
-  return 'warning';
+// 获取端口列表
+const getPorts = (service: Service) => {
+  const ports = service.spec?.ports || [];
+  return ports.map(p => {
+    const protocol = p.protocol || 'TCP';
+    if (p.nodePort) {
+      return `${p.port}:${p.nodePort}/${protocol}`;
+    }
+    return `${p.port}/${protocol}`;
+  });
 };
 
 // 格式化时间
@@ -221,45 +169,15 @@ const formatAge = (timestamp?: string) => {
 };
 
 // 查看详情
-const handleViewDetail = (deployment: Deployment) => {
-  detailYaml.value = yaml.dump(deployment, { indent: 2 });
+const handleViewDetail = (service: Service) => {
+  detailYaml.value = yaml.dump(service, { indent: 2 });
   detailVisible.value = true;
 };
 
-// 扩缩容
-const handleScale = (deployment: Deployment) => {
-  scaleForm.value = {
-    name: deployment.metadata.name,
-    currentReplicas: deployment.spec?.replicas || 0,
-    replicas: deployment.spec?.replicas || 0,
-  };
-  scaleVisible.value = true;
-};
-
-// 确认扩缩容
-const onConfirmScale = async () => {
-  scaleLoading.value = true;
-  try {
-    await scaleDeployment(
-      clusterId,
-      namespace,
-      scaleForm.value.name,
-      scaleForm.value.replicas
-    );
-    MessagePlugin.success('扩缩容成功');
-    scaleVisible.value = false;
-    await fetchData();
-  } catch (e: any) {
-    MessagePlugin.error(e.message || '扩缩容失败');
-  } finally {
-    scaleLoading.value = false;
-  }
-};
-
 // 删除
-const handleDelete = async (deployment: Deployment) => {
+const handleDelete = async (service: Service) => {
   try {
-    await deleteDeployment(clusterId, namespace, deployment.metadata.name);
+    await deleteService(clusterId, namespace, service.metadata.name);
     MessagePlugin.success('删除成功');
     await fetchData();
   } catch (e: any) {
@@ -271,7 +189,7 @@ const handleDelete = async (deployment: Deployment) => {
 const fetchData = async () => {
   loading.value = true;
   try {
-    const res = await getDeployments(clusterId, namespace);
+    const res = await getServices(clusterId, namespace);
     data.value = res.items || [];
   } catch (e: any) {
     MessagePlugin.error(e.message || '加载数据失败');
@@ -289,29 +207,8 @@ const goToProjectDetail = () => {
   router.push({ name: 'ProjectDetail', params: { id: projectId } });
 };
 
-// 查看 Pods
-const handleViewPods = (deployment: Deployment) => {
-  // 构建 label selector，用于过滤该 deployment 的 pods
-  const labels = deployment.spec?.selector?.matchLabels || {};
-  const labelSelector = Object.entries(labels)
-    .map(([key, value]) => `${key}=${value}`)
-    .join(',');
-  
-  router.push({
-    name: 'ProjectResourcePods',
-    params: { id: projectId },
-    query: {
-      clusterId,
-      namespace,
-      deployment: deployment.metadata.name,
-      labelSelector,
-    },
-  });
-};
-
 // 初始化
 onMounted(async () => {
-  // 加载项目和集群信息
   try {
     const project = await getProject(projectId);
     projectName.value = project.name;
@@ -323,7 +220,6 @@ onMounted(async () => {
     console.error('加载项目信息失败:', e);
   }
   
-  // 加载 Deployment 列表
   await fetchData();
 });
 </script>
@@ -360,7 +256,7 @@ onMounted(async () => {
   font-weight: 500;
 }
 
-.image-list {
+.port-list {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;

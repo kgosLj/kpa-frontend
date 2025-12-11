@@ -7,7 +7,7 @@
           <t-breadcrumb>
             <t-breadcrumb-item @click="goToProjectList">项目列表</t-breadcrumb-item>
             <t-breadcrumb-item @click="goToProjectDetail">{{ projectName }}</t-breadcrumb-item>
-            <t-breadcrumb-item>Deployments</t-breadcrumb-item>
+            <t-breadcrumb-item>ConfigMaps</t-breadcrumb-item>
           </t-breadcrumb>
         </div>
         <div class="context-info">
@@ -26,7 +26,7 @@
         </t-button>
         <t-input
           v-model="searchKeyword"
-          placeholder="搜索 Deployment 名称"
+          placeholder="搜索 ConfigMap 名称"
           clearable
           style="width: 300px"
         >
@@ -36,7 +36,7 @@
         </t-input>
       </div>
 
-      <!-- Deployment 列表 -->
+      <!-- ConfigMap 列表 -->
       <t-table
         :data="filteredData"
         :columns="COLUMNS"
@@ -45,26 +45,10 @@
         :hover="true"
       >
         <template #name="{ row }">
-          <t-link theme="primary" @click="handleViewPods(row)">{{ row.metadata.name }}</t-link>
+          <span class="resource-name">{{ row.metadata.name }}</span>
         </template>
-        <template #replicas="{ row }">
-          <span>{{ row.status?.readyReplicas || 0 }} / {{ row.spec?.replicas || 0 }}</span>
-        </template>
-        <template #images="{ row }">
-          <div class="image-list">
-            <t-tag
-              v-for="(image, idx) in getImages(row)"
-              :key="idx"
-              theme="default"
-              variant="outline"
-              size="small"
-            >
-              {{ image }}
-            </t-tag>
-          </div>
-        </template>
-        <template #status="{ row }">
-          <t-tag :theme="getStatusTheme(row)">{{ getStatus(row) }}</t-tag>
+        <template #dataCount="{ row }">
+          {{ getDataCount(row) }}
         </template>
         <template #age="{ row }">
           {{ formatAge(row.metadata.creationTimestamp) }}
@@ -72,10 +56,10 @@
         <template #op="{ row }">
           <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
           <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleScale(row)">扩缩容</t-link>
+          <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
           <t-divider layout="vertical" />
           <t-popconfirm
-            content="确定删除该 Deployment 吗？此操作不可恢复。"
+            content="确定删除该 ConfigMap 吗？此操作不可恢复。"
             @confirm="handleDelete(row)"
           >
             <t-link theme="danger">删除</t-link>
@@ -87,35 +71,45 @@
     <!-- 详情对话框 -->
     <t-dialog
       v-model:visible="detailVisible"
-      header="Deployment 详情"
+      header="ConfigMap 详情"
       width="800px"
       :footer="false"
     >
       <div class="detail-content">
-        <pre class="yaml-content">{{ detailYaml }}</pre>
+        <t-descriptions bordered>
+          <t-descriptions-item label="名称">{{ currentConfigMap?.metadata.name }}</t-descriptions-item>
+          <t-descriptions-item label="命名空间">{{ currentConfigMap?.metadata.namespace }}</t-descriptions-item>
+          <t-descriptions-item label="创建时间">
+            {{ formatTime(currentConfigMap?.metadata.creationTimestamp) }}
+          </t-descriptions-item>
+        </t-descriptions>
+        <h4 style="margin-top: 20px; margin-bottom: 10px;">配置数据</h4>
+        <div v-if="currentConfigMap?.data" class="data-section">
+          <div v-for="(value, key) in currentConfigMap.data" :key="key" class="data-item">
+            <div class="data-key">{{ key }}</div>
+            <pre class="data-value">{{ value }}</pre>
+          </div>
+        </div>
+        <t-empty v-else description="暂无配置数据" />
       </div>
     </t-dialog>
 
-    <!-- 扩缩容对话框 -->
+    <!-- 编辑对话框 -->
     <t-dialog
-      v-model:visible="scaleVisible"
-      header="扩缩容"
-      :confirm-btn="{ content: '确定', loading: scaleLoading }"
-      @confirm="onConfirmScale"
+      v-model:visible="editVisible"
+      header="编辑 ConfigMap"
+      width="800px"
+      :confirm-btn="{ content: '保存', loading: editLoading }"
+      @confirm="onConfirmEdit"
     >
-      <t-form :data="scaleForm" label-align="right" :label-width="100">
-        <t-form-item label="当前副本数">
-          <span>{{ scaleForm.currentReplicas }}</span>
-        </t-form-item>
-        <t-form-item label="目标副本数" name="replicas">
-          <t-input-number
-            v-model="scaleForm.replicas"
-            :min="0"
-            :max="100"
-            placeholder="请输入目标副本数"
-          />
-        </t-form-item>
-      </t-form>
+      <div class="edit-content">
+        <t-alert theme="info" message="请以 YAML 格式编辑 ConfigMap" style="margin-bottom: 16px;" />
+        <t-textarea
+          v-model="editYaml"
+          :autosize="{ minRows: 20, maxRows: 30 }"
+          placeholder="请输入 YAML 格式的 ConfigMap"
+        />
+      </div>
     </t-dialog>
   </div>
 </template>
@@ -125,12 +119,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon } from 'tdesign-icons-vue-next';
-import {
-  getDeployments,
-  deleteDeployment,
-  scaleDeployment,
-  type Deployment,
-} from '@/api/k8s-resources';
+import { getConfigMaps, deleteConfigMap, updateConfigMap, type ConfigMap } from '@/api/k8s-resources';
 import { getProject } from '@/api/project';
 import { getClusterList } from '@/api/cluster';
 import * as yaml from 'js-yaml';
@@ -144,17 +133,15 @@ const namespace = route.query.namespace as string;
 
 const projectName = ref('');
 const clusterName = ref('');
-const data = ref<Deployment[]>([]);
+const data = ref<ConfigMap[]>([]);
 const loading = ref(false);
 const searchKeyword = ref('');
 
 const COLUMNS = [
-  { title: '名称', colKey: 'name', width: 250 },
-  { title: '副本数', colKey: 'replicas', width: 120 },
-  { title: '镜像', colKey: 'images', ellipsis: true },
-  { title: '状态', colKey: 'status', width: 120 },
+  { title: '名称', colKey: 'name', width: 300 },
+  { title: '数据项数量', colKey: 'dataCount', width: 150 },
   { title: '创建时间', colKey: 'age', width: 150 },
-  { title: '操作', colKey: 'op', width: 200, fixed: 'right' as const },
+  { title: '操作', colKey: 'op', width: 220, fixed: 'right' as const },
 ];
 
 // 过滤数据
@@ -167,41 +154,19 @@ const filteredData = computed(() => {
 
 // 详情对话框
 const detailVisible = ref(false);
-const detailYaml = ref('');
+const currentConfigMap = ref<ConfigMap | null>(null);
 
-// 扩缩容对话框
-const scaleVisible = ref(false);
-const scaleLoading = ref(false);
-const scaleForm = ref({
-  name: '',
-  currentReplicas: 0,
-  replicas: 0,
-});
+// 编辑对话框
+const editVisible = ref(false);
+const editLoading = ref(false);
+const editYaml = ref('');
+const editingConfigMap = ref<ConfigMap | null>(null);
 
-// 获取镜像列表
-const getImages = (deployment: Deployment) => {
-  const containers = deployment.spec?.template?.spec?.containers || [];
-  return containers.map(c => c.image);
-};
-
-// 获取状态
-const getStatus = (deployment: Deployment) => {
-  const replicas = deployment.spec?.replicas || 0;
-  const readyReplicas = deployment.status?.readyReplicas || 0;
-  
-  if (readyReplicas === replicas) return '运行中';
-  if (readyReplicas === 0) return '未就绪';
-  return '部分就绪';
-};
-
-// 获取状态主题
-const getStatusTheme = (deployment: Deployment) => {
-  const replicas = deployment.spec?.replicas || 0;
-  const readyReplicas = deployment.status?.readyReplicas || 0;
-  
-  if (readyReplicas === replicas) return 'success';
-  if (readyReplicas === 0) return 'danger';
-  return 'warning';
+// 获取数据项数量
+const getDataCount = (configMap: ConfigMap) => {
+  const dataCount = Object.keys(configMap.data || {}).length;
+  const binaryDataCount = Object.keys(configMap.binaryData || {}).length;
+  return dataCount + binaryDataCount;
 };
 
 // 格式化时间
@@ -220,46 +185,51 @@ const formatAge = (timestamp?: string) => {
   return `${minutes}分钟`;
 };
 
+const formatTime = (timestamp?: string) => {
+  if (!timestamp) return '-';
+  return new Date(timestamp).toLocaleString('zh-CN');
+};
+
 // 查看详情
-const handleViewDetail = (deployment: Deployment) => {
-  detailYaml.value = yaml.dump(deployment, { indent: 2 });
+const handleViewDetail = (configMap: ConfigMap) => {
+  currentConfigMap.value = configMap;
   detailVisible.value = true;
 };
 
-// 扩缩容
-const handleScale = (deployment: Deployment) => {
-  scaleForm.value = {
-    name: deployment.metadata.name,
-    currentReplicas: deployment.spec?.replicas || 0,
-    replicas: deployment.spec?.replicas || 0,
-  };
-  scaleVisible.value = true;
+// 编辑
+const handleEdit = (configMap: ConfigMap) => {
+  editingConfigMap.value = configMap;
+  editYaml.value = yaml.dump(configMap, { indent: 2 });
+  editVisible.value = true;
 };
 
-// 确认扩缩容
-const onConfirmScale = async () => {
-  scaleLoading.value = true;
+// 确认编辑
+const onConfirmEdit = async () => {
+  if (!editingConfigMap.value) return;
+  
+  editLoading.value = true;
   try {
-    await scaleDeployment(
+    const updatedConfigMap = yaml.load(editYaml.value) as ConfigMap;
+    await updateConfigMap(
       clusterId,
       namespace,
-      scaleForm.value.name,
-      scaleForm.value.replicas
+      editingConfigMap.value.metadata.name,
+      updatedConfigMap
     );
-    MessagePlugin.success('扩缩容成功');
-    scaleVisible.value = false;
+    MessagePlugin.success('更新成功');
+    editVisible.value = false;
     await fetchData();
   } catch (e: any) {
-    MessagePlugin.error(e.message || '扩缩容失败');
+    MessagePlugin.error(e.message || '更新失败');
   } finally {
-    scaleLoading.value = false;
+    editLoading.value = false;
   }
 };
 
 // 删除
-const handleDelete = async (deployment: Deployment) => {
+const handleDelete = async (configMap: ConfigMap) => {
   try {
-    await deleteDeployment(clusterId, namespace, deployment.metadata.name);
+    await deleteConfigMap(clusterId, namespace, configMap.metadata.name);
     MessagePlugin.success('删除成功');
     await fetchData();
   } catch (e: any) {
@@ -271,7 +241,7 @@ const handleDelete = async (deployment: Deployment) => {
 const fetchData = async () => {
   loading.value = true;
   try {
-    const res = await getDeployments(clusterId, namespace);
+    const res = await getConfigMaps(clusterId, namespace);
     data.value = res.items || [];
   } catch (e: any) {
     MessagePlugin.error(e.message || '加载数据失败');
@@ -289,29 +259,8 @@ const goToProjectDetail = () => {
   router.push({ name: 'ProjectDetail', params: { id: projectId } });
 };
 
-// 查看 Pods
-const handleViewPods = (deployment: Deployment) => {
-  // 构建 label selector，用于过滤该 deployment 的 pods
-  const labels = deployment.spec?.selector?.matchLabels || {};
-  const labelSelector = Object.entries(labels)
-    .map(([key, value]) => `${key}=${value}`)
-    .join(',');
-  
-  router.push({
-    name: 'ProjectResourcePods',
-    params: { id: projectId },
-    query: {
-      clusterId,
-      namespace,
-      deployment: deployment.metadata.name,
-      labelSelector,
-    },
-  });
-};
-
 // 初始化
 onMounted(async () => {
-  // 加载项目和集群信息
   try {
     const project = await getProject(projectId);
     projectName.value = project.name;
@@ -323,7 +272,6 @@ onMounted(async () => {
     console.error('加载项目信息失败:', e);
   }
   
-  // 加载 Deployment 列表
   await fetchData();
 });
 </script>
@@ -360,25 +308,39 @@ onMounted(async () => {
   font-weight: 500;
 }
 
-.image-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.detail-content {
+  .data-section {
+    .data-item {
+      margin-bottom: var(--td-comp-margin-m);
+      border: 1px solid var(--td-border-level-1-color);
+      border-radius: var(--td-radius-default);
+      overflow: hidden;
+
+      .data-key {
+        padding: 8px 12px;
+        background: var(--td-bg-color-container);
+        font-weight: 500;
+        border-bottom: 1px solid var(--td-border-level-1-color);
+      }
+
+      .data-value {
+        margin: 0;
+        padding: 12px;
+        background: var(--td-bg-color-page);
+        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    }
+  }
 }
 
-.detail-content {
-  max-height: 600px;
-  overflow-y: auto;
-
-  .yaml-content {
-    background: var(--td-bg-color-container);
-    padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
-    border-radius: var(--td-radius-default);
+.edit-content {
+  :deep(.t-textarea__inner) {
     font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
     font-size: 12px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-all;
   }
 }
 </style>

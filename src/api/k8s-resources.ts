@@ -344,3 +344,127 @@ export function getNamespaces(clusterId: string) {
         },
     });
 }
+
+// Pod 相关接口
+export interface PodSpec {
+    containers: Array<{
+        name: string;
+        image: string;
+        ports?: Array<{
+            containerPort: number;
+            protocol?: string;
+        }>;
+        resources?: {
+            requests?: Record<string, string>;
+            limits?: Record<string, string>;
+        };
+    }>;
+    restartPolicy?: string;
+    nodeName?: string;
+}
+
+export interface PodStatus {
+    phase: string; // Running, Pending, Succeeded, Failed, Unknown
+    conditions?: Array<{
+        type: string;
+        status: string;
+        reason?: string;
+        message?: string;
+    }>;
+    containerStatuses?: Array<{
+        name: string;
+        ready: boolean;
+        restartCount: number;
+        state?: any;
+    }>;
+    podIP?: string;
+    startTime?: string;
+}
+
+export interface Pod extends K8sResource {
+    spec: PodSpec;
+    status?: PodStatus;
+}
+
+// Metrics 相关接口
+export interface ContainerMetricsItem {
+    name: string;
+    cpu_usage: string;
+    memory_usage: string;
+}
+
+export interface PodMetricsItem {
+    name: string;
+    namespace: string;
+    total_cpu_usage: string;
+    total_memory_usage: string;
+    containers: ContainerMetricsItem[];
+}
+
+export interface PodMetricsResponse {
+    items: PodMetricsItem[];
+}
+
+// Pod API
+
+/**
+ * 获取 Pod 列表
+ */
+export function getPods(clusterId: string, namespace: string, labelSelector?: string) {
+    const params: Record<string, string> = {};
+    if (labelSelector) {
+        params.labelSelector = labelSelector;
+    }
+
+    return request.get<K8sListResponse<Pod>>({
+        url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/pods`,
+        params,
+        headers: {
+            'X-Current-Cluster': clusterId,
+        },
+    });
+}
+
+/**
+ * 获取单个 Pod
+ */
+export function getPod(clusterId: string, namespace: string, name: string) {
+    return request.get<Pod>({
+        url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/pods/${name}`,
+        headers: {
+            'X-Current-Cluster': clusterId,
+        },
+    });
+}
+
+/**
+ * 删除 Pod
+ */
+export function deletePod(clusterId: string, namespace: string, name: string) {
+    return request.delete({
+        url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/pods/${name}`,
+        headers: {
+            'X-Current-Cluster': clusterId,
+        },
+    });
+}
+
+// Metrics API
+
+/**
+ * 获取 Pod 监控数据
+ */
+export function getPodMetrics(clusterId: string, namespace?: string) {
+    const params: Record<string, string> = {};
+    if (namespace) {
+        params.namespace = namespace;
+    }
+
+    return request.get<PodMetricsResponse>({
+        url: `/clusters/${clusterId}/metrics/pods`,
+        params,
+        headers: {
+            'X-Current-Cluster': clusterId,
+        },
+    });
+}
