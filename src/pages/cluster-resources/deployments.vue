@@ -251,6 +251,7 @@ import {
   getPodLogs,
   type Deployment,
   type Pod,
+  restartDeployment,
 } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
@@ -523,19 +524,21 @@ const onConfirmEditYaml = async () => {
 };
 
 // 重新部署
+// 重新部署
 const handleRedeploy = async (deployment: Deployment) => {
+  let msgInstance;
   try {
-    MessagePlugin.loading('正在重新部署...', 0);
+    msgInstance = MessagePlugin.loading('正在重新部署...', 0);
     
-    // 这里可以通过更新 Deployment 的 annotation 来触发重新部署
-    // 或者调用 kubectl rollout restart 的等效 API
+    await restartDeployment(clusterId.value, namespace.value, deployment.metadata.name);
     
-    // 临时方案：显示提示
-    MessagePlugin.close();
-    MessagePlugin.info('重新部署功能需要后端 API 支持，请手动执行 kubectl rollout restart');
-    
+    MessagePlugin.close(msgInstance);
+    MessagePlugin.success('已触发重新部署');
+    await fetchData();
   } catch (e: any) {
-    MessagePlugin.close();
+    if (msgInstance) {
+      MessagePlugin.close(msgInstance);
+    }
     MessagePlugin.error(e.message || '重新部署失败');
   }
 };
