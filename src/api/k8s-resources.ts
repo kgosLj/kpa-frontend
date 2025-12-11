@@ -468,3 +468,40 @@ export function getPodMetrics(clusterId: string, namespace?: string) {
         },
     });
 }
+
+/**
+ * 获取 Pod 日志
+ */
+export function getPodLogs(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    options?: {
+        container?: string;
+        tailLines?: number;
+        follow?: boolean;
+    }
+) {
+    const params: Record<string, string> = {};
+
+    if (options?.container) {
+        params.container = options.container;
+    }
+    if (options?.tailLines) {
+        params.tailLines = options.tailLines.toString();
+    }
+    if (options?.follow) {
+        params.follow = 'true';
+    }
+
+    return request.get<string>({
+        url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/pods/${podName}/log`,
+        params,
+        headers: {
+            'X-Current-Cluster': clusterId,
+        },
+        requestOptions: {
+            isTransformResponse: false,
+        },
+    });
+}

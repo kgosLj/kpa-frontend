@@ -83,6 +83,8 @@
         <template #op="{ row }">
           <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
           <t-divider layout="vertical" />
+          <t-link theme="primary" @click="handleViewLogs(row)">查看日志</t-link>
+          <t-divider layout="vertical" />
           <t-link theme="primary" @click="handleEditYaml(row)">编辑YAML</t-link>
           <t-divider layout="vertical" />
           <t-link theme="primary" @click="handleScale(row)">扩缩容</t-link>
@@ -167,6 +169,72 @@
         <t-alert theme="info" message="提示：请输入完整的 Deployment YAML 配置，系统会自动部署到当前命名空间" />
       </div>
     </t-dialog>
+
+    <!-- 日志查看器对话框 -->
+    <t-dialog
+      v-model:visible="logViewerVisible"
+      header="查看日志"
+      width="1200px"
+      :footer="false"
+    >
+      <div class="log-viewer">
+        <div class="log-controls">
+          <div class="control-group">
+            <label>选择 Pod：</label>
+            <t-select
+              v-model="selectedPod"
+              placeholder="请选择 Pod"
+              style="width: 300px"
+              @change="onPodChange"
+            >
+              <t-option
+                v-for="pod in availablePods"
+                :key="pod.metadata.name"
+                :value="pod.metadata.name"
+                :label="pod.metadata.name"
+              />
+            </t-select>
+          </div>
+          
+          <div class="control-group">
+            <label>Tail 行数：</label>
+            <t-select
+              v-model="tailLines"
+              style="width: 120px"
+              @change="fetchLogs"
+            >
+              <t-option :value="50" label="50" />
+              <t-option :value="100" label="100" />
+              <t-option :value="1000" label="1000" />
+              <t-option :value="2000" label="2000" />
+            </t-select>
+          </div>
+          
+          <div class="control-group">
+            <t-checkbox v-model="followLogs" @change="toggleFollow">
+              实时输出
+            </t-checkbox>
+          </div>
+          
+          <div class="control-group">
+            <t-button theme="primary" @click="fetchLogs" :loading="logLoading">
+              刷新日志
+            </t-button>
+          </div>
+        </div>
+        
+        <div class="log-content" ref="logContentRef">
+          <pre v-if="logContent">{{ logContent }}</pre>
+          <div v-else-if="logLoading" class="log-loading">
+            <t-loading />
+            <span>加载中...</span>
+          </div>
+          <div v-else class="log-empty">
+            <span>请选择 Pod 查看日志</span>
+          </div>
+        </div>
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -179,7 +247,10 @@ import {
   getDeployments,
   deleteDeployment,
   scaleDeployment,
+  getPods,
+  getPodLogs,
   type Deployment,
+  type Pod,
 } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
@@ -264,6 +335,18 @@ spec:
             cpu: 500m
             memory: 512Mi
 `);
+
+// 日志查看器状态
+const logViewerVisible = ref(false);
+const logLoading = ref(false);
+const logContent = ref('');
+const selectedPod = ref('');
+const availablePods = ref<Pod[]>([]);
+const tailLines = ref(100);
+const followLogs = ref(false);
+const logContentRef = ref<HTMLElement | null>(null);
+const logTimer = ref<number | null>(null);
+const currentDeployment = ref<Deployment | null>(null);
 
 // 获取镜像列表
 const getImages = (deployment: Deployment) => {
@@ -482,8 +565,112 @@ const onConfirmDeploy = async () => {
     await fetchData();
   } catch (e: any) {
     MessagePlugin.error(e.message || 'YAML 格式错误或部署失败');
-  } finally {
     deployLoading.value = false;
+  }
+};
+
+// 查看日志
+const handleViewLogs = async (deployment: Deployment) => {
+  currentDeployment.value = deployment;
+  logViewerVisible.value = true;
+  logContent.value = '';
+  selectedPod.value = '';
+  
+  // 获取该 Deployment 的所有 Pods
+  try {
+    const labelSelector = Object.entries(deployment.spec.selector.matchLabels)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(',');
+    
+    const res = await getPods(clusterId.value, namespace.value, labelSelector);
+    availablePods.value = res.items || [];
+    
+    // 自动选择第一个 Pod
+    if (availablePods.value.length > 0) {
+      selectedPod.value = availablePods.value[0].metadata.name;
+      await fetchLogs();
+    }
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '获取 Pod 列表失败');
+  }
+};
+
+// 获取日志
+const fetchLogs = async () => {
+  if (!selectedPod.value) {
+    return;
+  }
+  
+  logLoading.value = true;
+  try {
+    const res = await getPodLogs(clusterId.value, namespace.value, selectedPod.value, {
+      tailLines: tailLines.value,
+      follow: false, // 首次加载不使用 follow
+    });
+    
+    // res 已经是字符串了（因为 requestOptions.isTransformResponse: false）
+    logContent.value = typeof res === 'string' ? res : (res as any).logs || '暂无日志';
+    
+    // 滚动到底部
+    setTimeout(() => {
+      if (logContentRef.value) {
+        logContentRef.value.scrollTop = logContentRef.value.scrollHeight;
+      }
+    }, 100);
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '获取日志失败');
+    logContent.value = '获取日志失败';
+  } finally {
+    logLoading.value = false;
+  }
+};
+
+// Pod 变化
+const onPodChange = () => {
+  fetchLogs();
+};
+
+// 切换实时输出
+const toggleFollow = () => {
+  if (followLogs.value) {
+    // 开启实时输出
+    startLogStreaming();
+  } else {
+    // 停止实时输出
+    stopLogStreaming();
+  }
+};
+
+// 开始日志流
+const startLogStreaming = () => {
+  stopLogStreaming(); // 先停止之前的
+  
+  logTimer.value = window.setInterval(async () => {
+    if (!selectedPod.value) return;
+    
+    try {
+      const res = await getPodLogs(clusterId.value, namespace.value, selectedPod.value, {
+        tailLines: tailLines.value,
+        follow: false,
+      });
+      
+      logContent.value = typeof res === 'string' ? res : (res as any).logs || '暂无日志';
+      
+      // 滚动到底部
+      if (logContentRef.value) {
+        logContentRef.value.scrollTop = logContentRef.value.scrollHeight;
+      }
+    } catch (e) {
+      console.error('获取日志失败:', e);
+    }
+  }, 2000); // 每2秒刷新一次
+};
+
+// 停止日志流
+const stopLogStreaming = () => {
+  if (logTimer.value) {
+    clearInterval(logTimer.value);
+    logTimer.value = null;
   }
 };
 
@@ -648,6 +835,68 @@ onMounted(async () => {
 
 .deploy-hint {
   margin-top: var(--td-comp-margin-m);
+}
+
+.log-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+  
+  .log-controls {
+    display: flex;
+    gap: var(--td-comp-margin-l);
+    align-items: center;
+    margin-bottom: var(--td-comp-margin-m);
+    padding-bottom: var(--td-comp-margin-m);
+    border-bottom: 1px solid var(--td-component-stroke);
+    
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: var(--td-comp-margin-s);
+      
+      label {
+        font-size: 13px;
+        color: var(--td-text-color-primary);
+      }
+    }
+  }
+  
+  .log-content {
+    flex: 1;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
+    border-radius: var(--td-radius-default);
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    
+    .log-loading {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--td-comp-margin-m);
+      color: var(--td-text-color-secondary);
+    }
+    
+    .log-empty {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--td-text-color-placeholder);
+    }
+  }
 }
 </style>
 
