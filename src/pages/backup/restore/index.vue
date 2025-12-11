@@ -51,6 +51,26 @@
         :pagination="pagination"
         @page-change="onPageChange"
       >
+        <template #source_cluster_name="{ row }">
+          <t-tag theme="primary" variant="outline">{{ row.source_cluster_name }}</t-tag>
+        </template>
+        <template #target_cluster_name="{ row }">
+          <t-tag 
+            :theme="row.source_cluster_id === row.target_cluster_id ? 'default' : 'warning'" 
+            variant="outline"
+          >
+            {{ row.target_cluster_name }}
+          </t-tag>
+          <t-tag 
+            v-if="row.source_cluster_id !== row.target_cluster_id" 
+            theme="warning" 
+            variant="light" 
+            size="small"
+            style="margin-left: 4px"
+          >
+            跨集群
+          </t-tag>
+        </template>
         <template #status="{ row }">
           <t-tag v-if="row.status === 'Completed'" theme="success" variant="light">已完成</t-tag>
           <t-tag v-else-if="row.status === 'InProgress'" theme="warning" variant="light">进行中</t-tag>
@@ -62,8 +82,20 @@
         </template>
         <template #errors_warnings="{ row }">
           <t-space>
-            <t-tag v-if="row.errors > 0" theme="danger" variant="light">错误: {{ row.errors }}</t-tag>
-            <t-tag v-if="row.warnings > 0" theme="warning" variant="light">警告: {{ row.warnings }}</t-tag>
+            <t-link 
+              v-if="row.errors > 0" 
+              theme="danger" 
+              @click="showDetails(row, 'error')"
+            >
+              错误: {{ row.errors }}
+            </t-link>
+            <t-link 
+              v-if="row.warnings > 0" 
+              theme="warning" 
+              @click="showDetails(row, 'warning')"
+            >
+              警告: {{ row.warnings }}
+            </t-link>
             <span v-if="row.errors === 0 && row.warnings === 0">-</span>
           </t-space>
         </template>
@@ -75,6 +107,20 @@
         </template>
       </t-table>
     </t-card>
+
+    <!-- 详细信息对话框 -->
+    <t-dialog
+      v-model:visible="detailDialogVisible"
+      :header="detailDialogTitle"
+      width="600px"
+    >
+      <t-list v-if="detailMessages.length > 0" :split="true">
+        <t-list-item v-for="(msg, index) in detailMessages" :key="index">
+          {{ msg }}
+        </t-list-item>
+      </t-list>
+      <t-empty v-else description="暂无详细信息" />
+    </t-dialog>
   </div>
 </template>
 
@@ -99,8 +145,10 @@ const initialClusterId = (route.params.clusterId as string) || (route.query.clus
 const initialBackupName = route.query.backupName as string;
 
 const COLUMNS: PrimaryTableCol<TableRowData>[] = [
-  { title: '恢复ID', colKey: 'id', width: 280, ellipsis: true },
-  { title: '源备份', colKey: 'backup_name', width: 200 },
+  { title: '恢复ID', colKey: 'id', width: 250, ellipsis: true },
+  { title: '源备份', colKey: 'backup_name', width: 180 },
+  { title: '源集群', colKey: 'source_cluster_name', width: 150 },
+  { title: '目标集群', colKey: 'target_cluster_name', width: 150 },
   { title: '目标命名空间', colKey: 'target_namespace', width: 150 },
   { title: '状态', colKey: 'status', width: 120 },
   { title: 'Velero 阶段', colKey: 'phase', width: 150 },
@@ -112,6 +160,11 @@ const COLUMNS: PrimaryTableCol<TableRowData>[] = [
 const data = ref<RestoreResponse[]>([]);
 const dataLoading = ref(false);
 
+// 详细信息对话框
+const detailDialogVisible = ref(false);
+const detailDialogTitle = ref('');
+const detailMessages = ref<string[]>([]);
+
 const filterParams = ref({
   backup_name: initialBackupName || '',
   status: '',
@@ -122,6 +175,18 @@ const pagination = ref<PaginationProps>({
   pageSize: 10,
   total: 0,
 });
+
+// 显示详细信息
+const showDetails = (row: RestoreResponse, type: 'error' | 'warning') => {
+  if (type === 'error') {
+    detailDialogTitle.value = `错误详情 (${row.errors} 个错误)`;
+    detailMessages.value = row.error_messages || [];
+  } else {
+    detailDialogTitle.value = `警告详情 (${row.warnings} 个警告)`;
+    detailMessages.value = row.warning_messages || [];
+  }
+  detailDialogVisible.value = true;
+};
 
 // 加载集群列表
 const loadClusters = async () => {

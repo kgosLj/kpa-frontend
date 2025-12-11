@@ -95,6 +95,8 @@
     <RestoreDialog
       v-model:visible="restoreDialogVisible"
       :backup-name="currentBackupName"
+      :source-cluster-id="selectedClusterId"
+      :source-cluster-name="selectedClusterName"
       @confirm="onRestoreConfirm"
     />
   </div>
@@ -147,6 +149,12 @@ const pagination = ref<PaginationProps>({
   current: 1,
   pageSize: 10,
   total: 0,
+});
+
+// 当前选中的集群名称
+const selectedClusterName = computed(() => {
+  const cluster = clusters.value.find(c => c.id === selectedClusterId.value);
+  return cluster?.name || '';
 });
 
 // 加载集群列表

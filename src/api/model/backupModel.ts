@@ -81,6 +81,9 @@ export interface ScheduleResponse {
  * 恢复备份请求
  */
 export interface RestoreRequest {
+    backup_name?: string;
+    source_cluster_id: string;      // 备份来源集群 ID
+    target_cluster_id?: string;     // 恢复目标集群 ID（可选，默认为源集群）
     target_namespace?: string;
 }
 
@@ -90,12 +93,17 @@ export interface RestoreRequest {
 export interface RestoreResponse {
     id: string;
     backup_name: string;
-    cluster_id: string;
+    source_cluster_id: string;      // 备份来源集群 ID
+    target_cluster_id: string;      // 恢复目标集群 ID
+    source_cluster_name: string;    // 备份来源集群名称
+    target_cluster_name: string;    // 恢复目标集群名称
     target_namespace: string;
     status: string;
     phase: string;
     errors: number;
     warnings: number;
+    error_messages?: string[];      // 详细错误信息
+    warning_messages?: string[];    // 详细警告信息
     created_at: string;
     completed_at?: string;
 }
