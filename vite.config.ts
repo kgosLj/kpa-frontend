@@ -53,6 +53,9 @@ export default ({ mode }: ConfigEnv): UserConfig => {
           // Note: usually we might want to strip prefix if backend doesn't have it, but backend HAS /api/v1 prefix as per router.go
           // router.go: api := r.Group("/api/v1")
           // So we just forward as is.
+
+          // 添加 WebSocket 支持
+          ws: true,
         },
       },
     },

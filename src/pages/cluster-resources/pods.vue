@@ -47,6 +47,8 @@
       <template #op="{ row }">
         <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
         <t-divider layout="vertical" />
+        <t-link theme="warning" @click="handleTerminal(row)">终端</t-link>
+        <t-divider layout="vertical" />
         <t-popconfirm
           content="确定删除该 Pod 吗？此操作不可恢复。"
           @confirm="handleDelete(row)"
@@ -67,6 +69,25 @@
         <pre class="yaml-content">{{ detailYaml }}</pre>
       </div>
     </t-dialog>
+
+    <!-- 终端对话框 -->
+    <t-dialog
+      v-model:visible="terminalVisible"
+      header="Pod 终端"
+      width="90%"
+      top="5vh"
+      :footer="false"
+      destroy-on-close
+    >
+      <div v-if="terminalVisible && currentTerminalPod" class="terminal-wrapper">
+        <pod-terminal
+          :cluster-id="clusterId"
+          :namespace="namespace"
+          :pod-name="currentTerminalPod.metadata.name"
+          :container="currentTerminalContainer"
+        />
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -83,6 +104,7 @@ import {
   type PodMetricsItem,
 } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
+import PodTerminal from '@/components/Terminal/PodTerminal.vue';
 import * as yaml from 'js-yaml';
 
 const route = useRoute();
@@ -120,6 +142,11 @@ const filteredData = computed(() => {
 // 详情对话框
 const detailVisible = ref(false);
 const detailYaml = ref('');
+
+// 终端对话框
+const terminalVisible = ref(false);
+const currentTerminalPod = ref<Pod | null>(null);
+const currentTerminalContainer = ref('');
 
 // 获取状态
 const getStatus = (pod: Pod) => {
@@ -198,6 +225,12 @@ const getMemoryUsage = (pod: Pod) => {
 // 解析 CPU 值到 millicores
 const parseCPUToMillicores = (cpu: string): number => {
   if (!cpu) return 0;
+  if (cpu.endsWith('n')) {
+     return Math.round(parseInt(cpu.slice(0, -1), 10) / 1000000);
+  }
+  if (cpu.endsWith('u')) {
+     return Math.round(parseInt(cpu.slice(0, -1), 10) / 1000);
+  }
   if (cpu.endsWith('m')) {
     return parseInt(cpu.slice(0, -1), 10);
   }
@@ -224,6 +257,7 @@ const parseMemoryToMi = (memory: string): number => {
 // 格式化 CPU（millicores 转为可读格式）
 const formatCPU = (millicores: number): string => {
   if (millicores >= 1000) {
+    // 显示为核心数，保留2位小数，如 1.50
     return `${(millicores / 1000).toFixed(2)}`;
   }
   return `${millicores}m`;
@@ -257,6 +291,14 @@ const formatAge = (timestamp?: string) => {
 const handleViewDetail = (pod: Pod) => {
   detailYaml.value = yaml.dump(pod, { indent: 2 });
   detailVisible.value = true;
+};
+
+// 打开终端
+const handleTerminal = (pod: Pod) => {
+  currentTerminalPod.value = pod;
+  // 默认使用第一个容器
+  currentTerminalContainer.value = pod.spec?.containers[0]?.name || '';
+  terminalVisible.value = true;
 };
 
 // 删除

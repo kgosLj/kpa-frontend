@@ -7,23 +7,31 @@
           <label>命名空间</label>
           <t-select
             v-model="selectedNamespaceKey"
-            :options="namespaceOptions"
-            placeholder="请选择命名空间"
+            placeholder="请选择命名空间 (Debug)"
             :loading="loading"
             @change="handleNamespaceChange"
             style="width: 500px"
           >
-            <template #option="slotProps">
+            <t-option
+              v-for="item in namespaceOptions"
+              :key="item.value"
+              :value="item.value"
+            >
               <div 
                 class="namespace-option"
-                :style="getOptionStyle(slotProps.option.envType)"
+                :style="getOptionStyle(item.envType)"
               >
-                {{ slotProps.option.label }}
-                <span v-if="slotProps.option.envLabel" style="margin-left: 4px; font-weight: 600;">
-                  ({{ slotProps.option.envLabel }})
+                {{ item.label }}
+                <!-- Debug Info -->
+                <span class="debug-info" style="font-size: 12px; margin-left: 8px;">
+                   [Env: {{ item.envType }}]
+                </span>
+                <!-- Environment Label -->
+                <span v-if="item.envLabel" style="margin-left: 4px; font-weight: 600;">
+                  ({{ item.envLabel }})
                 </span>
               </div>
-            </template>
+            </t-option>
           </t-select>
         </div>
       </div>
@@ -56,31 +64,36 @@ const loading = ref(false);
 // 选中的命名空间 key（格式：clusterId|namespace）
 const selectedNamespaceKey = ref<string>('');
 
+// 归一化环境类型
+const normalizeEnvironment = (env?: string): string => {
+  if (!env) return 'default';
+  const e = env.toLowerCase();
+  if (['dev', 'development', 'develop'].includes(e)) return 'dev';
+  if (['staging', 'test', 'testing', 'pre', 'pre-prod'].includes(e)) return 'staging';
+  if (['prod', 'production'].includes(e)) return 'prod';
+  return 'default';
+};
+
 // 获取环境标签主题色
 const getEnvironmentTheme = (environment?: string): string => {
-  switch (environment) {
-    case 'dev':
-      return 'primary'; // 蓝色
-    case 'staging':
-      return 'warning'; // 橙色
-    case 'prod':
-      return 'danger'; // 红色
-    default:
-      return 'default';
+  const env = normalizeEnvironment(environment);
+  switch (env) {
+    case 'dev': return 'primary'; // 蓝色
+    case 'staging': return 'warning'; // 橙色
+    case 'prod': return 'danger'; // 红色
+    default: return 'default';
   }
 };
 
 // 获取环境标签文本
 const getEnvironmentLabel = (environment?: string): string => {
-  switch (environment) {
-    case 'dev':
-      return '开发';
-    case 'staging':
-      return '预发布';
-    case 'prod':
-      return '生产';
-    default:
-      return environment || '';
+  const env = normalizeEnvironment(environment);
+  switch (env) {
+    case 'dev': return '开发';
+    case 'staging': return '预发布';
+    case 'prod': return '生产';
+    // 如果无法识别，尝试返回原值，或者空
+    default: return environment || '';
   }
 };
 
@@ -89,15 +102,20 @@ const namespaceOptions = computed((): SelectOption[] => {
   return store.availableNamespaces.map(ns => {
     const cluster = clusters.value.find(c => c.id === ns.cluster_id);
     const clusterName = cluster?.name || ns.cluster_id;
+    // 使用 normalizeEnvironment 确保一致性
+    const normalizedEnv = normalizeEnvironment(ns.environment);
     const envLabel = getEnvironmentLabel(ns.environment);
-    const envTheme = getEnvironmentTheme(ns.environment);
     
+    // Debug output
+    // console.log('Namespace:', ns.namespace, 'Env:', ns.environment, 'Normalized:', normalizedEnv);
+
     return {
       label: `${clusterName} / ${ns.namespace}`,
       value: `${ns.cluster_id}|${ns.namespace}`,
       envLabel,
-      envTheme,
-      envType: ns.environment || 'default', // dev, staging, prod
+      envType: normalizedEnv, // dev, staging, prod, default
+      // ensure content is not empty if slot is not used effectively? 
+      // TDesign select uses content or label.
     };
   });
 });

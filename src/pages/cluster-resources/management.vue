@@ -110,13 +110,21 @@ const namespaceOptions = computed((): SelectOption[] => {
     const cluster = clusters.value.find(c => c.id === ns.cluster_id);
     const clusterName = cluster?.name || ns.cluster_id;
     const envLabel = getEnvironmentLabel(ns.environment);
-    const envTheme = getEnvironmentTheme(ns.environment);
+    // Normalize environment for class usage
+    let envType = 'default';
+    if (ns.environment) {
+        const e = ns.environment.toLowerCase();
+        if (['dev', 'development', 'develop'].includes(e)) envType = 'dev';
+        else if (['staging', 'test', 'testing', 'pre', 'pre-prod'].includes(e)) envType = 'staging';
+        else if (['prod', 'production'].includes(e)) envType = 'prod';
+        else envType = ns.environment;
+    }
     
     return {
       label: `${clusterName} / ${ns.namespace}`,
       value: `${ns.cluster_id}|${ns.namespace}`,
       envLabel,
-      envTheme,
+      envType, // This was missing and is required by the template
     };
   });
 });

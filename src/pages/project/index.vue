@@ -83,7 +83,7 @@
             {{ getClusterName(row.cluster_id) }}
           </template>
           <template #environment="{ row }">
-            <t-tag v-if="row.environment === 'prod'" theme="success">生产</t-tag>
+            <t-tag v-if="row.environment === 'prod'" theme="danger">生产</t-tag>
             <t-tag v-else-if="row.environment === 'staging'" theme="warning">预发布</t-tag>
             <t-tag v-else-if="row.environment === 'dev'" theme="primary">开发</t-tag>
             <t-tag v-else>{{ row.environment }}</t-tag>
