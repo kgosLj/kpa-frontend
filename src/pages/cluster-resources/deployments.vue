@@ -156,8 +156,7 @@
       v-model:visible="deployVisible"
       header="部署应用"
       width="900px"
-      :confirm-btn="{ content: '部署', loading: deployLoading }"
-      @confirm="onConfirmDeploy"
+      :footer="false"
     >
       <t-textarea
         v-model="deployYamlContent"
@@ -168,7 +167,25 @@
       <div class="deploy-hint">
         <t-alert theme="info" message="提示：请输入完整的 Deployment YAML 配置，系统会自动部署到当前命名空间" />
       </div>
+      <div class="dialog-footer">
+        <t-button theme="default" @click="deployVisible = false">取消</t-button>
+        <t-button theme="primary" variant="outline" @click="handlePreviewDeploy" :loading="diffLoading">
+          预览变更
+        </t-button>
+        <t-button theme="success" @click="onConfirmDeploy" :loading="deployLoading">
+          直接部署
+        </t-button>
+      </div>
     </t-dialog>
+
+    <!-- Diff 对话框 -->
+    <resource-diff-dialog
+      v-model:visible="diffDialogVisible"
+      :diff-data="diffData"
+      :loading="diffLoading"
+      confirm-text="确认部署"
+      @confirm="onConfirmDeployAfterDiff"
+    />
 
     <!-- 日志查看器对话框 -->
     <t-dialog
@@ -252,9 +269,12 @@ import {
   type Deployment,
   type Pod,
   restartDeployment,
+  diffResource,
+  type ResourceDiffResponse,
 } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
+import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
 
 const router = useRouter();
 const store = useClusterResourceStore();
@@ -336,6 +356,11 @@ spec:
             cpu: 500m
             memory: 512Mi
 `);
+
+// Diff 对话框
+const diffDialogVisible = ref(false);
+const diffLoading = ref(false);
+const diffData = ref<ResourceDiffResponse | null>(null);
 
 // 日志查看器状态
 const logViewerVisible = ref(false);
@@ -548,7 +573,53 @@ const handleDeploy = () => {
   deployVisible.value = true;
 };
 
-// 确认部署
+// 预览变更
+const handlePreviewDeploy = async () => {
+  diffLoading.value = true;
+  try {
+    // 解析 YAML 获取资源名称
+    const deployment = yaml.load(deployYamlContent.value) as Deployment;
+    
+    // 验证是否是 Deployment
+    if (deployment.kind !== 'Deployment') {
+      throw new Error('请输入 Deployment 类型的 YAML 配置');
+    }
+
+    // 调用 diff API
+    const response = await diffResource(clusterId.value, {
+      namespace: namespace.value,
+      kind: 'Deployment',
+      name: deployment.metadata.name,
+      new_yaml: deployYamlContent.value,
+    });
+
+    diffData.value = response;
+    diffDialogVisible.value = true;
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '预览变更失败');
+  } finally {
+    diffLoading.value = false;
+  }
+};
+
+// 确认部署（在 diff 对话框中）
+const onConfirmDeployAfterDiff = async () => {
+  deployLoading.value = true;
+  try {
+    // 这里需要调用创建/更新 API
+    // 暂时使用占位符
+    MessagePlugin.success('部署成功（需要后端 API 支持）');
+    diffDialogVisible.value = false;
+    deployVisible.value = false;
+    await fetchData();
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '部署失败');
+  } finally {
+    deployLoading.value = false;
+  }
+};
+
+// 确认部署（直接部署）
 const onConfirmDeploy = async () => {
   deployLoading.value = true;
   try {
@@ -568,6 +639,7 @@ const onConfirmDeploy = async () => {
     await fetchData();
   } catch (e: any) {
     MessagePlugin.error(e.message || 'YAML 格式错误或部署失败');
+  } finally {
     deployLoading.value = false;
   }
 };

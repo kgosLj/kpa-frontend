@@ -1,120 +1,92 @@
 <template>
   <div class="resource-container">
-    <t-card :bordered="false">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="breadcrumb">
-          <t-breadcrumb>
-            <t-breadcrumb-item @click="goToProjectList">项目列表</t-breadcrumb-item>
-            <t-breadcrumb-item @click="goToProjectDetail">{{ projectName }}</t-breadcrumb-item>
-            <t-breadcrumb-item>Services</t-breadcrumb-item>
-          </t-breadcrumb>
-        </div>
-        <div class="context-info">
-          <t-tag theme="primary">{{ clusterName }}</t-tag>
-          <t-tag theme="success">{{ namespace }}</t-tag>
-        </div>
-      </div>
-
-      <t-divider />
-
-      <!-- 操作栏 -->
-      <div class="toolbar">
-        <t-button theme="primary" @click="fetchData">
-          <template #icon><refresh-icon /></template>
-          刷新
-        </t-button>
-        <t-input
-          v-model="searchKeyword"
-          placeholder="搜索 Service 名称"
-          clearable
-          style="width: 300px"
-        >
-          <template #suffix-icon>
-            <search-icon />
-          </template>
-        </t-input>
-      </div>
-
-      <!-- Service 列表 -->
-      <t-table
-        :data="filteredData"
-        :columns="COLUMNS"
-        :loading="loading"
-        row-key="metadata.name"
-        :hover="true"
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <t-button theme="primary" @click="fetchData">
+        <template #icon><refresh-icon /></template>
+        刷新
+      </t-button>
+      
+      <t-input
+        v-model="searchKeyword"
+        placeholder="搜索 Service 名称"
+        clearable
+        style="width: 300px"
       >
-        <template #name="{ row }">
-          <span class="resource-name">{{ row.metadata.name }}</span>
-        </template>
-        <template #type="{ row }">
-          <t-tag theme="default">{{ row.spec?.type || 'ClusterIP' }}</t-tag>
-        </template>
-        <template #clusterIP="{ row }">
-          {{ row.spec?.clusterIP || '-' }}
-        </template>
-        <template #ports="{ row }">
-          <div class="port-list">
-            <t-tag
-              v-for="(port, idx) in getPorts(row)"
-              :key="idx"
-              theme="default"
-              variant="outline"
-              size="small"
-            >
-              {{ port }}
-            </t-tag>
-          </div>
-        </template>
-        <template #age="{ row }">
-          {{ formatAge(row.metadata.creationTimestamp) }}
-        </template>
-        <template #op="{ row }">
-          <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-          <t-divider layout="vertical" />
-          <t-popconfirm
-            content="确定删除该 Service 吗？此操作不可恢复。"
-            @confirm="handleDelete(row)"
-          >
-            <t-link theme="danger">删除</t-link>
-          </t-popconfirm>
-        </template>
-      </t-table>
-    </t-card>
+        <template #prefix-icon><search-icon /></template>
+      </t-input>
+    </div>
+
+    <!-- Service 列表 -->
+    <t-table
+      :data="filteredData"
+      :columns="COLUMNS"
+      :loading="loading"
+      row-key="metadata.uid"
+      stripe
+      hover
+    >
+      <template #name="{ row }">
+        <t-link theme="primary" @click="handleViewDetail(row)">
+          {{ row.metadata.name }}
+        </t-link>
+      </template>
+      
+      <template #type="{ row }">
+        <t-tag :theme="row.spec.type === 'LoadBalancer' ? 'warning' : row.spec.type === 'NodePort' ? 'success' : 'default'">
+          {{ row.spec.type }}
+        </t-tag>
+      </template>
+      
+      <template #clusterIP="{ row }">
+        {{ row.spec.clusterIP || '-' }}
+      </template>
+      
+      <template #ports="{ row }">
+        {{ getPorts(row) }}
+      </template>
+      
+      <template #age="{ row }">
+        {{ formatAge(row.metadata.creationTimestamp) }}
+      </template>
+      
+      <template #op="{ row }">
+        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
+        <t-divider layout="vertical" />
+        <t-popconfirm
+          content="确定删除该 Service 吗？此操作不可恢复。"
+          @confirm="handleDelete(row)"
+        >
+          <t-link theme="danger">删除</t-link>
+        </t-popconfirm>
+      </template>
+    </t-table>
 
     <!-- 详情对话框 -->
     <t-dialog
       v-model:visible="detailVisible"
       header="Service 详情"
-      width="800px"
-      :footer="false"
+      width="900px"
     >
-      <div class="detail-content">
-        <pre class="yaml-content">{{ detailYaml }}</pre>
-      </div>
+      <pre class="yaml-content">{{ detailYaml }}</pre>
     </t-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, onMounted, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon } from 'tdesign-icons-vue-next';
 import { getServices, deleteService, type Service } from '@/api/k8s-resources';
-import { getProject } from '@/api/project';
-import { getClusterList } from '@/api/cluster';
+import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
 
-const route = useRoute();
-const router = useRouter();
+const store = useClusterResourceStore();
 
-const projectId = route.params.id as string;
-const clusterId = route.query.clusterId as string;
-const namespace = route.query.namespace as string;
+// 从 store 获取集群和命名空间信息
+const clusterId = computed(() => store.clusterId);
+const namespace = computed(() => store.namespace);
 
-const projectName = ref('');
-const clusterName = ref('');
 const data = ref<Service[]>([]);
 const loading = ref(false);
 const searchKeyword = ref('');
@@ -177,7 +149,7 @@ const handleViewDetail = (service: Service) => {
 // 删除
 const handleDelete = async (service: Service) => {
   try {
-    await deleteService(clusterId, namespace, service.metadata.name);
+    await deleteService(clusterId.value, namespace.value, service.metadata.name);
     MessagePlugin.success('删除成功');
     await fetchData();
   } catch (e: any) {
@@ -187,41 +159,31 @@ const handleDelete = async (service: Service) => {
 
 // 加载数据
 const fetchData = async () => {
+  if (!clusterId.value || !namespace.value) {
+    data.value = [];
+    return;
+  }
+  
   loading.value = true;
   try {
-    const res = await getServices(clusterId, namespace);
-    data.value = res.items || [];
+    const response = await getServices(clusterId.value, namespace.value);
+    // getServices 返回 K8sListResponse<Service>
+    data.value = response.items || [];
   } catch (e: any) {
-    MessagePlugin.error(e.message || '加载数据失败');
+    MessagePlugin.error(e.message || '加载 Service 列表失败');
+    data.value = [];
   } finally {
     loading.value = false;
   }
 };
 
-// 导航
-const goToProjectList = () => {
-  router.push({ name: 'ProjectList' });
-};
-
-const goToProjectDetail = () => {
-  router.push({ name: 'ProjectDetail', params: { id: projectId } });
-};
-
-// 初始化
-onMounted(async () => {
-  try {
-    const project = await getProject(projectId);
-    projectName.value = project.name;
-    
-    const clusters = await getClusterList();
-    const cluster = clusters.find(c => c.id === clusterId);
-    clusterName.value = cluster?.name || clusterId;
-  } catch (e: any) {
-    console.error('加载项目信息失败:', e);
-  }
-  
-  await fetchData();
-});
+watch(
+  () => [clusterId.value, namespace.value],
+  () => {
+    fetchData();
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="less" scoped>

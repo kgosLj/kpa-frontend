@@ -23,18 +23,9 @@
             :loading="loadingNamespaces"
             :disabled="!selectedProjectId"
             @change="handleNamespaceChange"
+            filterable
             style="width: 400px"
-          >
-            <template #option="slotProps">
-              <div 
-                class="namespace-option-full" 
-                :class="`env-${slotProps.option.envType || 'default'}`"
-              >
-                <span class="namespace-label">{{ slotProps.option.label }}</span>
-                <span class="env-badge">{{ slotProps.option.envLabel }}</span>
-              </div>
-            </template>
-          </t-select>
+          />
         </div>
       </div>
 
@@ -106,25 +97,25 @@ const projectOptions = computed((): SelectOption[] => {
 
 // 命名空间选项
 const namespaceOptions = computed((): SelectOption[] => {
-  return namespaces.value.map(ns => {
-    const cluster = clusters.value.find(c => c.id === ns.cluster_id);
-    const clusterName = cluster?.name || ns.cluster_id;
+  // 先排序：生产 > 预发布 > 开发 > 其他
+  const sorted = [...namespaces.value].sort((a, b) => {
+    const getEnvPriority = (env?: string) => {
+      if (!env) return 999;
+      const e = env.toLowerCase();
+      if (['prod', 'production'].includes(e)) return 1;
+      if (['staging', 'test', 'testing', 'pre', 'pre-prod'].includes(e)) return 2;
+      if (['dev', 'development', 'develop'].includes(e)) return 3;
+      return 4;
+    };
+    return getEnvPriority(a.environment) - getEnvPriority(b.environment);
+  });
+
+  return sorted.map(ns => {
     const envLabel = getEnvironmentLabel(ns.environment);
-    // Normalize environment for class usage
-    let envType = 'default';
-    if (ns.environment) {
-        const e = ns.environment.toLowerCase();
-        if (['dev', 'development', 'develop'].includes(e)) envType = 'dev';
-        else if (['staging', 'test', 'testing', 'pre', 'pre-prod'].includes(e)) envType = 'staging';
-        else if (['prod', 'production'].includes(e)) envType = 'prod';
-        else envType = ns.environment;
-    }
     
     return {
-      label: `${clusterName} / ${ns.namespace}`,
-      value: `${ns.cluster_id}|${ns.namespace}`,
-      envLabel,
-      envType, // This was missing and is required by the template
+      label: `${ns.namespace} / ${envLabel}`,
+      value: ns.id,
     };
   });
 });
@@ -189,15 +180,18 @@ const handleProjectChange = async (value: string | number) => {
 
 // 处理命名空间变更
 const handleNamespaceChange = (value: string | number) => {
-  const key = String(value);
-  const [clusterId, namespace] = key.split('|');
-  const ns = namespaces.value.find(
-    n => n.cluster_id === clusterId && n.namespace === namespace
-  );
+  const namespaceId = String(value);
+  const selected = namespaces.value.find(ns => String(ns.id) === namespaceId);
   
-  if (ns) {
-    store.setNamespace(ns);
+  if (!selected) {
+    MessagePlugin.warning('未找到选中的命名空间');
+    return;
   }
+
+  // 更新 store - 传入完整的 namespace 对象
+  store.setNamespace(selected);
+  
+  MessagePlugin.success(`已切换到命名空间: ${selected.namespace}`);
 };
 
 // 处理标签页切换

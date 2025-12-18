@@ -355,6 +355,55 @@ export function deleteSecret(clusterId: string, namespace: string, name: string)
   });
 }
 
+// Resource Diff API
+
+/**
+ * 资源对比请求
+ */
+export interface ResourceDiffRequest {
+  namespace: string;
+  kind: string;
+  name: string;
+  new_yaml: string;
+}
+
+/**
+ * 变更项
+ */
+export interface ResourceChange {
+  type: string; // add, remove, modify
+  path: string;
+  old_value?: string;
+  new_value?: string;
+}
+
+/**
+ * 资源对比响应
+ */
+export interface ResourceDiffResponse {
+  exists: boolean;
+  old_yaml: string;
+  new_yaml: string;
+  diff_text: string;
+  changes: ResourceChange[];
+}
+
+/**
+ * 对比资源差异
+ */
+export function diffResource(
+  clusterId: string,
+  diffRequest: ResourceDiffRequest
+) {
+  return request.post<ResourceDiffResponse>({
+    url: `/clusters/${clusterId}/resources/diff`,
+    data: diffRequest,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
 // Namespace API
 
 /**

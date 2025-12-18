@@ -1,89 +1,65 @@
+```
 <template>
   <div class="resource-container">
-    <t-card :bordered="false">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="breadcrumb">
-          <t-breadcrumb>
-            <t-breadcrumb-item @click="goToProjectList">项目列表</t-breadcrumb-item>
-            <t-breadcrumb-item @click="goToProjectDetail">{{ projectName }}</t-breadcrumb-item>
-            <t-breadcrumb-item>ConfigMaps</t-breadcrumb-item>
-          </t-breadcrumb>
-        </div>
-        <div class="context-info">
-          <t-tag theme="primary">{{ clusterName }}</t-tag>
-          <t-tag theme="success">{{ namespace }}</t-tag>
-        </div>
-      </div>
-
-      <t-divider />
-
-      <!-- 操作栏 -->
-      <div class="toolbar">
-        <t-button theme="primary" @click="fetchData">
-          <template #icon><refresh-icon /></template>
-          刷新
-        </t-button>
-        <t-input
-          v-model="searchKeyword"
-          placeholder="搜索 ConfigMap 名称"
-          clearable
-          style="width: 300px"
-        >
-          <template #suffix-icon>
-            <search-icon />
-          </template>
-        </t-input>
-      </div>
-
-      <!-- ConfigMap 列表 -->
-      <t-table
-        :data="filteredData"
-        :columns="COLUMNS"
-        :loading="loading"
-        row-key="metadata.name"
-        :hover="true"
+    <!-- 操作栏 -->
+    <div class="toolbar">
+      <t-button theme="primary" @click="fetchData">
+        <template #icon><refresh-icon /></template>
+        刷新
+      </t-button>
+      <t-input
+        v-model="searchKeyword"
+        placeholder="搜索 ConfigMap 名称"
+        clearable
+        style="width: 300px"
       >
-        <template #name="{ row }">
-          <span class="resource-name">{{ row.metadata.name }}</span>
+        <template #prefix-icon>
+          <search-icon />
         </template>
-        <template #dataCount="{ row }">
-          {{ getDataCount(row) }}
-        </template>
-        <template #age="{ row }">
-          {{ formatAge(row.metadata.creationTimestamp) }}
-        </template>
-        <template #op="{ row }">
-          <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
-          <t-divider layout="vertical" />
-          <t-popconfirm
-            content="确定删除该 ConfigMap 吗？此操作不可恢复。"
-            @confirm="handleDelete(row)"
-          >
-            <t-link theme="danger">删除</t-link>
-          </t-popconfirm>
-        </template>
-      </t-table>
-    </t-card>
+      </t-input>
+    </div>
+
+    <!-- ConfigMap 列表 -->
+    <t-table
+      :data="filteredData"
+      :columns="COLUMNS"
+      :loading="loading"
+      row-key="metadata.name"
+      stripe
+      hover
+    >
+      <template #name="{ row }">
+        <span class="resource-name">{{ row.metadata.name }}</span>
+      </template>
+      <template #dataCount="{ row }">
+        {{ getDataCount(row) }}
+      </template>
+      <template #age="{ row }">
+        {{ formatAge(row.metadata.creationTimestamp) }}
+      </template>
+      <template #op="{ row }">
+        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
+        <t-divider layout="vertical" />
+        <t-popconfirm
+          content="确定删除该 ConfigMap 吗？此操作不可恢复。"
+          @confirm="handleDelete(row)"
+        >
+          <t-link theme="danger">删除</t-link>
+        </t-popconfirm>
+      </template>
+    </t-table>
 
     <!-- 详情对话框 -->
     <t-dialog
       v-model:visible="detailVisible"
       header="ConfigMap 详情"
-      width="800px"
+      width="900px"
       :footer="false"
     >
       <div class="detail-content">
-        <t-descriptions bordered>
-          <t-descriptions-item label="名称">{{ currentConfigMap?.metadata.name }}</t-descriptions-item>
-          <t-descriptions-item label="命名空间">{{ currentConfigMap?.metadata.namespace }}</t-descriptions-item>
-          <t-descriptions-item label="创建时间">
-            {{ formatTime(currentConfigMap?.metadata.creationTimestamp) }}
-          </t-descriptions-item>
-        </t-descriptions>
-        <h4 style="margin-top: 20px; margin-bottom: 10px;">配置数据</h4>
+        <h4 style="margin-bottom: 10px;">配置数据</h4>
         <div v-if="currentConfigMap?.data" class="data-section">
           <div v-for="(value, key) in currentConfigMap.data" :key="key" class="data-item">
             <div class="data-key">{{ key }}</div>
@@ -98,7 +74,7 @@
     <t-dialog
       v-model:visible="editVisible"
       header="编辑 ConfigMap"
-      width="800px"
+      width="900px"
       :confirm-btn="{ content: '保存', loading: editLoading }"
       @confirm="onConfirmEdit"
     >
@@ -108,6 +84,7 @@
           v-model="editYaml"
           :autosize="{ minRows: 20, maxRows: 30 }"
           placeholder="请输入 YAML 格式的 ConfigMap"
+          class="yaml-editor"
         />
       </div>
     </t-dialog>
@@ -115,32 +92,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon } from 'tdesign-icons-vue-next';
 import { getConfigMaps, deleteConfigMap, updateConfigMap, type ConfigMap } from '@/api/k8s-resources';
-import { getProject } from '@/api/project';
-import { getClusterList } from '@/api/cluster';
+import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
 
-const route = useRoute();
-const router = useRouter();
+const store = useClusterResourceStore();
 
-const projectId = route.params.id as string;
-const clusterId = route.query.clusterId as string;
-const namespace = route.query.namespace as string;
+// 从 store 获取集群和命名空间信息
+const clusterId = computed(() => store.clusterId);
+const namespace = computed(() => store.namespace);
 
-const projectName = ref('');
-const clusterName = ref('');
 const data = ref<ConfigMap[]>([]);
 const loading = ref(false);
 const searchKeyword = ref('');
 
 const COLUMNS = [
-  { title: '名称', colKey: 'name', width: 300 },
+  { title: '名称', colKey: 'name', minWidth: 200 },
   { title: '数据项数量', colKey: 'dataCount', width: 150 },
-  { title: '创建时间', colKey: 'age', width: 150 },
+  { title: '创建时间', colKey: 'age' },
   { title: '操作', colKey: 'op', width: 220, fixed: 'right' as const },
 ];
 
@@ -199,20 +171,35 @@ const handleViewDetail = (configMap: ConfigMap) => {
 // 编辑
 const handleEdit = (configMap: ConfigMap) => {
   editingConfigMap.value = configMap;
-  editYaml.value = yaml.dump(configMap, { indent: 2 });
+  
+  // 清理 YAML，只保留必要字段
+  const cleaned: any = {
+    apiVersion: configMap.apiVersion || 'v1',
+    kind: configMap.kind || 'ConfigMap',
+    metadata: {
+      name: configMap.metadata.name,
+      namespace: configMap.metadata.namespace,
+      labels: configMap.metadata.labels,
+      annotations: configMap.metadata.annotations,
+    },
+    data: configMap.data,
+    binaryData: configMap.binaryData,
+  };
+  
+  editYaml.value = yaml.dump(cleaned, { indent: 2, noRefs: true, sortKeys: false });
   editVisible.value = true;
 };
 
 // 确认编辑
 const onConfirmEdit = async () => {
-  if (!editingConfigMap.value) return;
+  if (!editingConfigMap.value || !clusterId.value || !namespace.value) return;
   
   editLoading.value = true;
   try {
     const updatedConfigMap = yaml.load(editYaml.value) as ConfigMap;
     await updateConfigMap(
-      clusterId,
-      namespace,
+      clusterId.value,
+      namespace.value,
       editingConfigMap.value.metadata.name,
       updatedConfigMap
     );
@@ -228,8 +215,9 @@ const onConfirmEdit = async () => {
 
 // 删除
 const handleDelete = async (configMap: ConfigMap) => {
+  if (!clusterId.value || !namespace.value) return;
   try {
-    await deleteConfigMap(clusterId, namespace, configMap.metadata.name);
+    await deleteConfigMap(clusterId.value, namespace.value, configMap.metadata.name);
     MessagePlugin.success('删除成功');
     await fetchData();
   } catch (e: any) {
@@ -239,41 +227,31 @@ const handleDelete = async (configMap: ConfigMap) => {
 
 // 加载数据
 const fetchData = async () => {
+  if (!clusterId.value || !namespace.value) {
+    data.value = [];
+    return;
+  }
+  
   loading.value = true;
   try {
-    const res = await getConfigMaps(clusterId, namespace);
+    const res = await getConfigMaps(clusterId.value, namespace.value);
     data.value = res.items || [];
   } catch (e: any) {
-    MessagePlugin.error(e.message || '加载数据失败');
+    MessagePlugin.error(e.message || '加载 ConfigMap 列表失败');
+    data.value = [];
   } finally {
     loading.value = false;
   }
 };
 
-// 导航
-const goToProjectList = () => {
-  router.push({ name: 'ProjectList' });
-};
-
-const goToProjectDetail = () => {
-  router.push({ name: 'ProjectDetail', params: { id: projectId } });
-};
-
-// 初始化
-onMounted(async () => {
-  try {
-    const project = await getProject(projectId);
-    projectName.value = project.name;
-    
-    const clusters = await getClusterList();
-    const cluster = clusters.find(c => c.id === clusterId);
-    clusterName.value = cluster?.name || clusterId;
-  } catch (e: any) {
-    console.error('加载项目信息失败:', e);
-  }
-  
-  await fetchData();
-});
+// 监听 store 变化
+watch(
+  () => [clusterId.value, namespace.value],
+  () => {
+    fetchData();
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="less" scoped>

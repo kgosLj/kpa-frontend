@@ -1,93 +1,67 @@
 <template>
   <div class="resource-container">
-    <t-card :bordered="false">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="breadcrumb">
-          <t-breadcrumb>
-            <t-breadcrumb-item @click="goToProjectList">项目列表</t-breadcrumb-item>
-            <t-breadcrumb-item @click="goToProjectDetail">{{ projectName }}</t-breadcrumb-item>
-            <t-breadcrumb-item>Secrets</t-breadcrumb-item>
-          </t-breadcrumb>
-        </div>
-        <div class="context-info">
-          <t-tag theme="primary">{{ clusterName }}</t-tag>
-          <t-tag theme="success">{{ namespace }}</t-tag>
-        </div>
-      </div>
-
-      <t-divider />
-
-      <!-- 操作栏 -->
-      <div class="toolbar">
-        <t-button theme="primary" @click="fetchData">
-          <template #icon><refresh-icon /></template>
-          刷新
-        </t-button>
-        <t-input
-          v-model="searchKeyword"
-          placeholder="搜索 Secret 名称"
-          clearable
-          style="width: 300px"
-        >
-          <template #suffix-icon>
-            <search-icon />
-          </template>
-        </t-input>
-      </div>
-
-      <!-- Secret 列表 -->
-      <t-table
-        :data="filteredData"
-        :columns="COLUMNS"
-        :loading="loading"
-        row-key="metadata.name"
-        :hover="true"
+    <!-- 操作栏 -->
+    <div class="toolbar">
+      <t-button theme="primary" @click="fetchData">
+        <template #icon><refresh-icon /></template>
+        刷新
+      </t-button>
+      <t-input
+        v-model="searchKeyword"
+        placeholder="搜索 Secret 名称"
+        clearable
+        style="width: 300px"
       >
-        <template #name="{ row }">
-          <span class="resource-name">{{ row.metadata.name }}</span>
+        <template #prefix-icon>
+          <search-icon />
         </template>
-        <template #type="{ row }">
-          <t-tag theme="default" variant="outline">{{ row.type }}</t-tag>
-        </template>
-        <template #dataCount="{ row }">
-          {{ getDataCount(row) }}
-        </template>
-        <template #age="{ row }">
-          {{ formatAge(row.metadata.creationTimestamp) }}
-        </template>
-        <template #op="{ row }">
-          <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
-          <t-divider layout="vertical" />
-          <t-popconfirm
-            content="确定删除该 Secret 吗？此操作不可恢复。"
-            @confirm="handleDelete(row)"
-          >
-            <t-link theme="danger">删除</t-link>
-          </t-popconfirm>
-        </template>
-      </t-table>
-    </t-card>
+      </t-input>
+    </div>
+
+    <!-- Secret 列表 -->
+    <t-table
+      :data="filteredData"
+      :columns="COLUMNS"
+      :loading="loading"
+      row-key="metadata.name"
+      stripe
+      hover
+    >
+      <template #name="{ row }">
+        <span class="resource-name">{{ row.metadata.name }}</span>
+      </template>
+      <template #type="{ row }">
+        <t-tag theme="default" variant="outline">{{ row.type }}</t-tag>
+      </template>
+      <template #dataCount="{ row }">
+        {{ getDataCount(row) }}
+      </template>
+      <template #age="{ row }">
+        {{ formatAge(row.metadata.creationTimestamp) }}
+      </template>
+      <template #op="{ row }">
+        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
+        <t-divider layout="vertical" />
+        <t-popconfirm
+          content="确定删除该 Secret 吗？此操作不可恢复。"
+          @confirm="handleDelete(row)"
+        >
+          <t-link theme="danger">删除</t-link>
+        </t-popconfirm>
+      </template>
+    </t-table>
 
     <!-- 详情对话框 -->
     <t-dialog
       v-model:visible="detailVisible"
       header="Secret 详情"
-      width="800px"
+      width="900px"
       :footer="false"
     >
       <div class="detail-content">
-        <t-descriptions bordered>
-          <t-descriptions-item label="名称">{{ currentSecret?.metadata.name }}</t-descriptions-item>
-          <t-descriptions-item label="命名空间">{{ currentSecret?.metadata.namespace }}</t-descriptions-item>
-          <t-descriptions-item label="类型">{{ currentSecret?.type }}</t-descriptions-item>
-          <t-descriptions-item label="创建时间">
-            {{ formatTime(currentSecret?.metadata.creationTimestamp) }}
-          </t-descriptions-item>
-        </t-descriptions>
-        <h4 style="margin-top: 20px; margin-bottom: 10px;">敏感数据</h4>
+        <h4 style="margin-bottom: 10px;">敏感数据</h4>
         <t-alert theme="warning" message="Secret 包含敏感信息，请谨慎查看和分享" style="margin-bottom: 16px;" />
         <div v-if="currentSecret?.data" class="data-section">
           <div v-for="(value, key) in currentSecret.data" :key="key" class="data-item">
@@ -126,7 +100,7 @@
     <t-dialog
       v-model:visible="editVisible"
       header="编辑 Secret"
-      width="800px"
+      width="900px"
       :confirm-btn="{ content: '保存', loading: editLoading }"
       @confirm="onConfirmEdit"
     >
@@ -136,6 +110,7 @@
           v-model="editYaml"
           :autosize="{ minRows: 20, maxRows: 30 }"
           placeholder="请输入 YAML 格式的 Secret"
+          class="yaml-editor"
         />
       </div>
     </t-dialog>
@@ -143,24 +118,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon, BrowseIcon, BrowseOffIcon } from 'tdesign-icons-vue-next';
 import { getSecrets, deleteSecret, updateSecret, type Secret } from '@/api/k8s-resources';
-import { getProject } from '@/api/project';
-import { getClusterList } from '@/api/cluster';
+import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
 
-const route = useRoute();
-const router = useRouter();
+const store = useClusterResourceStore();
 
-const projectId = route.params.id as string;
-const clusterId = route.query.clusterId as string;
-const namespace = route.query.namespace as string;
+// 从 store 获取集群和命名空间信息
+const clusterId = computed(() => store.clusterId);
+const namespace = computed(() => store.namespace);
 
-const projectName = ref('');
-const clusterName = ref('');
 const data = ref<Secret[]>([]);
 const loading = ref(false);
 const searchKeyword = ref('');
@@ -231,11 +201,6 @@ const formatAge = (timestamp?: string) => {
   return `${minutes}分钟`;
 };
 
-const formatTime = (timestamp?: string) => {
-  if (!timestamp) return '-';
-  return new Date(timestamp).toLocaleString('zh-CN');
-};
-
 // 查看详情
 const handleViewDetail = (secret: Secret) => {
   currentSecret.value = secret;
@@ -246,20 +211,36 @@ const handleViewDetail = (secret: Secret) => {
 // 编辑
 const handleEdit = (secret: Secret) => {
   editingSecret.value = secret;
-  editYaml.value = yaml.dump(secret, { indent: 2 });
+  
+  // 清理 YAML，只保留必要字段
+  const cleaned: any = {
+    apiVersion: secret.apiVersion || 'v1',
+    kind: secret.kind || 'Secret',
+    type: secret.type,
+    metadata: {
+      name: secret.metadata.name,
+      namespace: secret.metadata.namespace,
+      labels: secret.metadata.labels,
+      annotations: secret.metadata.annotations,
+    },
+    data: secret.data,
+    stringData: secret.stringData,
+  };
+  
+  editYaml.value = yaml.dump(cleaned, { indent: 2, noRefs: true, sortKeys: false });
   editVisible.value = true;
 };
 
 // 确认编辑
 const onConfirmEdit = async () => {
-  if (!editingSecret.value) return;
+  if (!editingSecret.value || !clusterId.value || !namespace.value) return;
   
   editLoading.value = true;
   try {
     const updatedSecret = yaml.load(editYaml.value) as Secret;
     await updateSecret(
-      clusterId,
-      namespace,
+      clusterId.value,
+      namespace.value,
       editingSecret.value.metadata.name,
       updatedSecret
     );
@@ -275,8 +256,9 @@ const onConfirmEdit = async () => {
 
 // 删除
 const handleDelete = async (secret: Secret) => {
+  if (!clusterId.value || !namespace.value) return;
   try {
-    await deleteSecret(clusterId, namespace, secret.metadata.name);
+    await deleteSecret(clusterId.value, namespace.value, secret.metadata.name);
     MessagePlugin.success('删除成功');
     await fetchData();
   } catch (e: any) {
@@ -286,41 +268,31 @@ const handleDelete = async (secret: Secret) => {
 
 // 加载数据
 const fetchData = async () => {
+  if (!clusterId.value || !namespace.value) {
+    data.value = [];
+    return;
+  }
+  
   loading.value = true;
   try {
-    const res = await getSecrets(clusterId, namespace);
+    const res = await getSecrets(clusterId.value, namespace.value);
     data.value = res.items || [];
   } catch (e: any) {
-    MessagePlugin.error(e.message || '加载数据失败');
+    MessagePlugin.error(e.message || '加载 Secret 列表失败');
+    data.value = [];
   } finally {
     loading.value = false;
   }
 };
 
-// 导航
-const goToProjectList = () => {
-  router.push({ name: 'ProjectList' });
-};
-
-const goToProjectDetail = () => {
-  router.push({ name: 'ProjectDetail', params: { id: projectId } });
-};
-
-// 初始化
-onMounted(async () => {
-  try {
-    const project = await getProject(projectId);
-    projectName.value = project.name;
-    
-    const clusters = await getClusterList();
-    const cluster = clusters.find(c => c.id === clusterId);
-    clusterName.value = cluster?.name || clusterId;
-  } catch (e: any) {
-    console.error('加载项目信息失败:', e);
-  }
-  
-  await fetchData();
-});
+// 监听 store 变化
+watch(
+  () => [clusterId.value, namespace.value],
+  () => {
+    fetchData();
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="less" scoped>
