@@ -2,10 +2,16 @@
   <div class="resource-container">
     <!-- 工具栏 -->
     <div class="toolbar">
-      <t-button theme="primary" @click="fetchData">
-        <template #icon><refresh-icon /></template>
-        刷新
-      </t-button>
+      <div class="toolbar-left">
+        <t-button theme="primary" @click="fetchData">
+          <template #icon><refresh-icon /></template>
+          刷新
+        </t-button>
+        <t-button theme="success" @click="handleCreate">
+          <template #icon><add-icon /></template>
+          部署 Service
+        </t-button>
+      </div>
       
       <t-input
         v-model="searchKeyword"
@@ -53,6 +59,8 @@
       <template #op="{ row }">
         <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
         <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
+        <t-divider layout="vertical" />
         <t-popconfirm
           content="确定删除该 Service 吗？此操作不可恢复。"
           @confirm="handleDelete(row)"
@@ -70,16 +78,44 @@
     >
       <pre class="yaml-content">{{ detailYaml }}</pre>
     </t-dialog>
+
+    <!-- 创建/编辑对话框 -->
+    <t-dialog
+      v-model:visible="formVisible"
+      :header="formMode === 'create' ? '部署 Service' : '编辑 Service'"
+      width="800px"
+      :footer="false"
+    >
+      <service-form
+        ref="formRef"
+        :mode="formMode"
+        :initial-data="editingService"
+        @success="handleFormSuccess"
+        @cancel="formVisible = false"
+        @preview-diff="handleFormPreviewDiff"
+      />
+    </t-dialog>
+
+    <!-- Diff 对话框 -->
+    <resource-diff-dialog
+      v-model:visible="diffDialogVisible"
+      :diff-data="diffData"
+      :loading="diffLoading"
+      :confirm-text="formMode === 'create' ? '确认部署' : '确认更新'"
+      @confirm="onConfirmDeployAfterDiff"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
-import { RefreshIcon, SearchIcon } from 'tdesign-icons-vue-next';
-import { getServices, deleteService, type Service } from '@/api/k8s-resources';
+import { RefreshIcon, SearchIcon, AddIcon } from 'tdesign-icons-vue-next';
+import { getServices, deleteService, type Service, type ResourceDiffResponse } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
+import ServiceForm from './components/ServiceForm.vue';
+import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
 
 const store = useClusterResourceStore();
 
@@ -97,7 +133,7 @@ const COLUMNS = [
   { title: 'Cluster IP', colKey: 'clusterIP', width: 150 },
   { title: '端口', colKey: 'ports', ellipsis: true },
   { title: '创建时间', colKey: 'age', width: 150 },
-  { title: '操作', colKey: 'op', width: 150, fixed: 'right' as const },
+  { title: '操作', colKey: 'op', width: 180, fixed: 'right' as const },
 ];
 
 // 过滤数据
@@ -111,6 +147,52 @@ const filteredData = computed(() => {
 // 详情对话框
 const detailVisible = ref(false);
 const detailYaml = ref('');
+
+// 创建/编辑对话框
+const formVisible = ref(false);
+const formMode = ref<'create' | 'edit'>('create');
+const formRef = ref();
+const editingService = ref<Service | null>(null);
+
+// Diff 对话框
+const diffDialogVisible = ref(false);
+const diffLoading = ref(false);
+const diffData = ref<ResourceDiffResponse | null>(null);
+
+// 创建
+const handleCreate = () => {
+  formMode.value = 'create';
+  editingService.value = null;
+  formVisible.value = true;
+};
+
+// 编辑
+const handleEdit = (service: Service) => {
+  formMode.value = 'edit';
+  editingService.value = service;
+  formVisible.value = true;
+};
+
+// 操作成功
+const handleFormSuccess = async () => {
+  formVisible.value = false;
+  diffDialogVisible.value = false;
+  await fetchData();
+};
+
+// 表单预览变更（不关闭表单）
+const handleFormPreviewDiff = (data: ResourceDiffResponse) => {
+  diffData.value = data;
+  diffDialogVisible.value = true;
+};
+
+// 确认部署（在 diff 对话框中）
+const onConfirmDeployAfterDiff = async () => {
+  diffDialogVisible.value = false;
+  if (formRef.value) {
+    formRef.value.confirmDiffAndSubmit?.();
+  }
+};
 
 // 获取端口列表
 const getPorts = (service: Service) => {
@@ -142,7 +224,7 @@ const formatAge = (timestamp?: string) => {
 
 // 查看详情
 const handleViewDetail = (service: Service) => {
-  detailYaml.value = yaml.dump(service, { indent: 2 });
+  detailYaml.value = yaml.dump(service, { indent: 2, noRefs: true });
   detailVisible.value = true;
 };
 
@@ -167,7 +249,6 @@ const fetchData = async () => {
   loading.value = true;
   try {
     const response = await getServices(clusterId.value, namespace.value);
-    // getServices 返回 K8sListResponse<Service>
     data.value = response.items || [];
   } catch (e: any) {
     MessagePlugin.error(e.message || '加载 Service 列表失败');
@@ -191,22 +272,6 @@ watch(
   padding: var(--td-comp-paddingTB-xxl) var(--td-comp-paddingLR-xxl);
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--td-comp-margin-l);
-
-  .breadcrumb {
-    flex: 1;
-  }
-
-  .context-info {
-    display: flex;
-    gap: var(--td-comp-margin-s);
-  }
-}
-
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -214,29 +279,14 @@ watch(
   margin-bottom: var(--td-comp-margin-l);
 }
 
-.resource-name {
-  font-weight: 500;
-}
-
-.port-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.detail-content {
-  max-height: 600px;
-  overflow-y: auto;
-
-  .yaml-content {
-    background: var(--td-bg-color-container);
-    padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
-    border-radius: var(--td-radius-default);
-    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-    font-size: 12px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
+.yaml-content {
+  background: var(--td-bg-color-container);
+  padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
+  border-radius: var(--td-radius-default);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

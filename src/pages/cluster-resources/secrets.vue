@@ -2,10 +2,16 @@
   <div class="resource-container">
     <!-- 操作栏 -->
     <div class="toolbar">
-      <t-button theme="primary" @click="fetchData">
-        <template #icon><refresh-icon /></template>
-        刷新
-      </t-button>
+      <div class="toolbar-left">
+        <t-button theme="primary" @click="fetchData">
+          <template #icon><refresh-icon /></template>
+          刷新
+        </t-button>
+        <t-button theme="success" @click="handleCreate">
+          <template #icon><add-icon /></template>
+          创建 Secret
+        </t-button>
+      </div>
       <t-input
         v-model="searchKeyword"
         placeholder="搜索 Secret 名称"
@@ -114,16 +120,32 @@
         />
       </div>
     </t-dialog>
+
+    <!-- 创建对话框 -->
+    <t-dialog
+      v-model:visible="createVisible"
+      header="创建 Secret"
+      width="800px"
+      :footer="false"
+      destroy-on-close
+    >
+      <secret-form
+        mode="create"
+        @success="handleFormSuccess"
+        @cancel="createVisible = false"
+      />
+    </t-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
-import { RefreshIcon, SearchIcon, BrowseIcon, BrowseOffIcon } from 'tdesign-icons-vue-next';
+import { RefreshIcon, SearchIcon, BrowseIcon, BrowseOffIcon, AddIcon } from 'tdesign-icons-vue-next';
 import { getSecrets, deleteSecret, updateSecret, type Secret } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
+import SecretForm from './components/SecretForm.vue';
 
 const store = useClusterResourceStore();
 
@@ -161,6 +183,20 @@ const editVisible = ref(false);
 const editLoading = ref(false);
 const editYaml = ref('');
 const editingSecret = ref<Secret | null>(null);
+
+// 创建对话框
+const createVisible = ref(false);
+
+// 创建
+const handleCreate = () => {
+  createVisible.value = true;
+};
+
+// 创建成功
+const handleFormSuccess = async () => {
+  createVisible.value = false;
+  await fetchData();
+};
 
 // 获取数据项数量
 const getDataCount = (secret: Secret) => {

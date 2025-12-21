@@ -15,9 +15,13 @@
             <template #icon><refresh-icon /></template>
             刷新
           </t-button>
-          <t-button theme="success" @click="handleDeploy">
+          <t-button theme="success" @click="handleFormCreate">
             <template #icon><add-icon /></template>
-            部署应用
+            Deployment部署
+          </t-button>
+          <t-button theme="default" @click="handleDeploy">
+            <template #icon><add-icon /></template>
+            YAML 部署
           </t-button>
         </div>
         <t-input
@@ -84,6 +88,8 @@
           <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
           <t-divider layout="vertical" />
           <t-link theme="primary" @click="handleViewLogs(row)">查看日志</t-link>
+          <t-divider layout="vertical" />
+          <t-link theme="primary" @click="handleFormEdit(row)">表单编辑</t-link>
           <t-divider layout="vertical" />
           <t-link theme="primary" @click="handleEditYaml(row)">编辑YAML</t-link>
           <t-divider layout="vertical" />
@@ -187,6 +193,41 @@
       @confirm="onConfirmDeployAfterDiff"
     />
 
+    <!-- 表单创建对话框 -->
+    <t-dialog
+      v-model:visible="formCreateVisible"
+      header="创建 Deployment"
+      width="1000px"
+      :footer="false"
+    >
+      <deployment-form
+        ref="createFormRef"
+        mode="create"
+        @success="handleFormSuccess"
+        @cancel="formCreateVisible = false"
+        @preview-diff="handleFormPreviewDiff"
+        @close-form="formCreateVisible = false"
+      />
+    </t-dialog>
+
+    <!-- 表单编辑对话框 -->
+    <t-dialog
+      v-model:visible="formEditVisible"
+      :header="`编辑 Deployment: ${editingDeployment?.metadata?.name || ''}`"
+      width="1000px"
+      :footer="false"
+    >
+      <deployment-form
+        ref="editFormRef"
+        mode="edit"
+        :initial-data="editingDeployment"
+        @success="handleFormEditSuccess"
+        @cancel="formEditVisible = false"
+        @preview-diff="handleFormEditPreviewDiff"
+        @close-form="formEditVisible = false"
+      />
+    </t-dialog>
+
     <!-- 日志查看器对话框 -->
     <t-dialog
       v-model:visible="logViewerVisible"
@@ -270,11 +311,14 @@ import {
   type Pod,
   restartDeployment,
   diffResource,
+  createDeployment,
+  updateDeployment,
   type ResourceDiffResponse,
 } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
 import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
+import DeploymentForm from './components/DeploymentForm.vue';
 
 const router = useRouter();
 const store = useClusterResourceStore();
@@ -362,6 +406,16 @@ const diffDialogVisible = ref(false);
 const diffLoading = ref(false);
 const diffData = ref<ResourceDiffResponse | null>(null);
 
+// 表单创建对话框
+const formCreateVisible = ref(false);
+const createFormRef = ref();
+
+// 表单编辑对话框
+const formEditVisible = ref(false);
+const editFormRef = ref();
+const editingDeployment = ref<Deployment | null>(null);
+const formDiffSource = ref<'create' | 'edit'>('create');
+
 // 日志查看器状态
 const logViewerVisible = ref(false);
 const logLoading = ref(false);
@@ -444,7 +498,7 @@ const formatAge = (timestamp?: string) => {
 
 // 查看详情
 const handleViewDetail = (deployment: Deployment) => {
-  detailYaml.value = yaml.dump(deployment, { indent: 2 });
+  detailYaml.value = yaml.dump(deployment, { indent: 2, noRefs: true });
   detailVisible.value = true;
 };
 
@@ -573,6 +627,43 @@ const handleDeploy = () => {
   deployVisible.value = true;
 };
 
+// 表单创建
+const handleFormCreate = () => {
+  formCreateVisible.value = true;
+};
+
+// 表单创建成功
+const handleFormSuccess = async () => {
+  formCreateVisible.value = false;
+  await fetchData();
+};
+
+// 表单预览变更
+const handleFormPreviewDiff = (data: ResourceDiffResponse) => {
+  formDiffSource.value = 'create';
+  diffData.value = data;
+  diffDialogVisible.value = true;
+};
+
+// 表单编辑
+const handleFormEdit = (deployment: Deployment) => {
+  editingDeployment.value = deployment;
+  formEditVisible.value = true;
+};
+
+// 表单编辑成功
+const handleFormEditSuccess = async () => {
+  formEditVisible.value = false;
+  await fetchData();
+};
+
+// 表单编辑预览变更
+const handleFormEditPreviewDiff = (data: ResourceDiffResponse) => {
+  formDiffSource.value = 'edit';
+  diffData.value = data;
+  diffDialogVisible.value = true;
+};
+
 // 预览变更
 const handlePreviewDeploy = async () => {
   diffLoading.value = true;
@@ -604,11 +695,34 @@ const handlePreviewDeploy = async () => {
 
 // 确认部署（在 diff 对话框中）
 const onConfirmDeployAfterDiff = async () => {
+  // 如果是表单创建/编辑，调用表单组件的提交方法
+  if (formDiffSource.value === 'create' && createFormRef.value) {
+    createFormRef.value.confirmDiffAndSubmit?.();
+    diffDialogVisible.value = false;
+    return;
+  }
+  if (formDiffSource.value === 'edit' && editFormRef.value) {
+    editFormRef.value.confirmDiffAndSubmit?.();
+    diffDialogVisible.value = false;
+    return;
+  }
+  
+  // YAML 部署逻辑
   deployLoading.value = true;
   try {
-    // 这里需要调用创建/更新 API
-    // 暂时使用占位符
-    MessagePlugin.success('部署成功（需要后端 API 支持）');
+    const deployment = yaml.load(deployYamlContent.value) as Deployment;
+    
+    // 根据 diffData 判断是创建还是更新
+    if (diffData.value && !diffData.value.exists) {
+      // 创建新资源
+      await createDeployment(clusterId.value, namespace.value, deployment);
+      MessagePlugin.success('Deployment 创建成功');
+    } else {
+      // 更新现有资源
+      await updateDeployment(clusterId.value, namespace.value, deployment.metadata.name, deployment);
+      MessagePlugin.success('Deployment 更新成功');
+    }
+    
     diffDialogVisible.value = false;
     deployVisible.value = false;
     await fetchData();

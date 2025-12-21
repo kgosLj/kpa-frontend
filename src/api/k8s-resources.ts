@@ -136,6 +136,19 @@ export function getDeployment(clusterId: string, namespace: string, name: string
 }
 
 /**
+ * 创建 Deployment
+ */
+export function createDeployment(clusterId: string, namespace: string, data: Deployment) {
+  return request.post<Deployment>({
+    url: `/clusters/${clusterId}/proxy/apis/apps/v1/namespaces/${namespace}/deployments`,
+    data,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
  * 更新 Deployment
  */
 export function updateDeployment(clusterId: string, namespace: string, name: string, data: Deployment) {
@@ -229,6 +242,19 @@ export function getService(clusterId: string, namespace: string, name: string) {
 }
 
 /**
+ * 创建 Service
+ */
+export function createService(clusterId: string, namespace: string, data: Service) {
+  return request.post<Service>({
+    url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/services`,
+    data,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
  * 更新 Service
  */
 export function updateService(clusterId: string, namespace: string, name: string, data: Service) {
@@ -280,6 +306,19 @@ export function getConfigMap(clusterId: string, namespace: string, name: string)
 }
 
 /**
+ * 创建 ConfigMap
+ */
+export function createConfigMap(clusterId: string, namespace: string, data: ConfigMap) {
+  return request.post<ConfigMap>({
+    url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/configmaps`,
+    data,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
  * 更新 ConfigMap
  */
 export function updateConfigMap(clusterId: string, namespace: string, name: string, data: ConfigMap) {
@@ -324,6 +363,19 @@ export function getSecrets(clusterId: string, namespace: string) {
 export function getSecret(clusterId: string, namespace: string, name: string) {
   return request.get<Secret>({
     url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/secrets/${name}`,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
+ * 创建 Secret
+ */
+export function createSecret(clusterId: string, namespace: string, data: Secret) {
+  return request.post<Secret>({
+    url: `/clusters/${clusterId}/proxy/api/v1/namespaces/${namespace}/secrets`,
+    data,
     headers: {
       'X-Current-Cluster': clusterId,
     },

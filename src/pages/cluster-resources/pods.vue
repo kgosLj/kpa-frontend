@@ -289,7 +289,7 @@ const formatAge = (timestamp?: string) => {
 
 // 查看详情
 const handleViewDetail = (pod: Pod) => {
-  detailYaml.value = yaml.dump(pod, { indent: 2 });
+  detailYaml.value = yaml.dump(pod, { indent: 2, noRefs: true });
   detailVisible.value = true;
 };
 
