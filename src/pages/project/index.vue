@@ -206,7 +206,6 @@ import type { Project, ProjectNamespace, ProjectMember } from '@/api/project';
 
 // 项目列表相关
 const COLUMNS = [
-  { title: 'ID', colKey: 'id', width: 280, ellipsis: true },
   { title: '项目名称', colKey: 'name', width: 200 },
   { title: '描述', colKey: 'description', ellipsis: true },
   { title: '状态', colKey: 'status', width: 100 },

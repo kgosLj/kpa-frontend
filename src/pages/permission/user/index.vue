@@ -40,7 +40,6 @@ import CreateUserDialog from './components/CreateUserDialog.vue';
 import dayjs from 'dayjs';
 
 const COLUMNS: PrimaryTableCol<TableRowData>[] = [
-  { title: '用户ID', colKey: 'id', width: 250 },
   { title: '用户名', colKey: 'username', width: 150 },
   { title: '角色', colKey: 'is_super_admin', width: 150 },
   { title: '创建时间', colKey: 'created_at', width: 200 },

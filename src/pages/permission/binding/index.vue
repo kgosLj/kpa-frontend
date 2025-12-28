@@ -52,7 +52,6 @@ import type { RoleBinding } from '@/api/model/roleBindingModel';
 import GrantDialog from './components/GrantDialog.vue';
 
 const COLUMNS: PrimaryTableCol<TableRowData>[] = [
-  { title: '用户ID', colKey: 'user_id', width: 200 },
   { title: '用户名', colKey: 'username', width: 150 },
   { title: '角色', colKey: 'role_name', width: 150 },
   { title: '集群', colKey: 'cluster_name', width: 200 },
