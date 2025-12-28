@@ -13,6 +13,7 @@ const InitUserInfo: UserInfo = {
 export const useUserStore = defineStore('user', {
   state: () => ({
     token: 'main_token', // 默认token不走权限
+    refreshToken: '', // 刷新令牌，用于自动续期
     userInfo: { ...InitUserInfo },
   }),
   getters: {
@@ -32,6 +33,8 @@ export const useUserStore = defineStore('user', {
       if (res.access_token) {
         console.log('Login Success. Response:', res); // DEBUG LOG
         this.token = res.access_token;
+        // 存储刷新令牌，用于自动续期
+        this.refreshToken = res.refresh_token || '';
         // 存储用户信息，因为后端没有/me接口
         this.userInfo = {
           name: userInfo.account as string || userInfo.phone as string,
@@ -42,6 +45,10 @@ export const useUserStore = defineStore('user', {
       } else {
         throw new Error('Login failed: Token not received');
       }
+    },
+    // 更新访问令牌（用于自动刷新）
+    setAccessToken(newToken: string) {
+      this.token = newToken;
     },
     async getUserInfo() {
       // 后端暂无 /me 接口，使用登录时获取的信息
@@ -55,6 +62,7 @@ export const useUserStore = defineStore('user', {
     },
     async logout() {
       this.token = '';
+      this.refreshToken = '';
       this.userInfo = { ...InitUserInfo };
     },
   },
@@ -64,6 +72,6 @@ export const useUserStore = defineStore('user', {
       permissionStore.initRoutes();
     },
     key: 'user',
-    paths: ['token', 'userInfo'],
+    paths: ['token', 'refreshToken', 'userInfo'],
   },
 });

@@ -1,10 +1,11 @@
 // axios配置  可自行根据项目进行更改，只需更改该文件即可，其他文件可以不动
-import type { AxiosInstance } from 'axios';
+import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import isString from 'lodash/isString';
 import merge from 'lodash/merge';
 
 import { ContentTypeEnum } from '@/constants';
 import { useUserStore } from '@/store';
+import { refreshToken as refreshTokenApi } from '@/api/auth';
 
 import { VAxios } from './Axios';
 import type { AxiosTransform, CreateAxiosOptions } from './AxiosTransform';
@@ -14,6 +15,27 @@ const env = import.meta.env.MODE || 'development';
 
 // 如果是mock模式 或 没启用直连代理 就不配置host 会走本地Mock拦截 或 Vite 代理
 const host = env === 'mock' || import.meta.env.VITE_IS_REQUEST_PROXY !== 'true' ? '' : import.meta.env.VITE_API_URL;
+
+// ======== Token 刷新相关状态 ========
+let isRefreshing = false; // 是否正在刷新 token
+let refreshSubscribers: Array<(token: string) => void> = []; // 等待刷新完成的请求队列
+
+// 添加请求到等待队列
+function subscribeTokenRefresh(callback: (token: string) => void) {
+  refreshSubscribers.push(callback);
+}
+
+// 刷新完成后，通知所有等待的请求
+function onTokenRefreshed(newToken: string) {
+  refreshSubscribers.forEach((callback) => callback(newToken));
+  refreshSubscribers = [];
+}
+
+// 刷新失败，清空队列
+function onRefreshFailed() {
+  refreshSubscribers = [];
+}
+// ======================================
 
 // 数据处理，方便区分多种处理方式
 const transform: AxiosTransform = {
@@ -147,12 +169,79 @@ const transform: AxiosTransform = {
     return res;
   },
 
-  // 响应错误处理
+  // 响应错误处理 - 包含 401 自动刷新逻辑
   responseInterceptorsCatch: (error: any, instance: AxiosInstance) => {
-    const { config } = error;
-    // Do not retry on 4xx errors (client errors)
-    if (!config || !config.requestOptions.retry) return Promise.reject(error);
-    if (error.response && error.response.status >= 400 && error.response.status < 500) {
+    const { config, response } = error;
+    const userStore = useUserStore();
+
+    // 检查是否为 401 错误（未授权/Token过期）
+    if (response?.status === 401) {
+      // 排除登录接口和刷新接口本身
+      const url = config?.url || '';
+      if (url.includes('/auth/login') || url.includes('/auth/refresh')) {
+        // 登录或刷新接口 401，直接跳转登录页
+        userStore.logout();
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      // 检查是否有 refresh token
+      const { refreshToken } = userStore;
+      if (!refreshToken) {
+        // 没有 refresh token，跳转登录页
+        console.warn('[Auth] No refresh token available, redirecting to login');
+        userStore.logout();
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      // 如果正在刷新，将请求加入队列等待
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((newToken: string) => {
+            // 使用新 token 重试请求
+            config.headers.Authorization = `Bearer ${newToken}`;
+            resolve(instance.request(config));
+          });
+        });
+      }
+
+      // 开始刷新 token
+      isRefreshing = true;
+      console.log('[Auth] Access token expired, refreshing...');
+
+      return refreshTokenApi(refreshToken)
+        .then((res: any) => {
+          const newToken = res.access_token || res;
+          if (newToken) {
+            console.log('[Auth] Token refreshed successfully');
+            // 更新 store 中的 token
+            userStore.setAccessToken(newToken);
+            // 通知所有等待的请求
+            onTokenRefreshed(newToken);
+            // 重试原请求
+            config.headers.Authorization = `Bearer ${newToken}`;
+            return instance.request(config);
+          }
+          throw new Error('Refresh token response invalid');
+        })
+        .catch((refreshError) => {
+          console.error('[Auth] Token refresh failed:', refreshError);
+          // 刷新失败，清空队列并跳转登录页
+          onRefreshFailed();
+          userStore.logout();
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        })
+        .finally(() => {
+          isRefreshing = false;
+        });
+    }
+
+    // 非 401 错误的重试逻辑
+    if (!config || !config.requestOptions?.retry) return Promise.reject(error);
+    // 不对 4xx 错误进行重试
+    if (response && response.status >= 400 && response.status < 500) {
       return Promise.reject(error);
     }
 
@@ -168,7 +257,7 @@ const transform: AxiosTransform = {
       }, config.requestOptions.retry.delay || 1);
     });
     config.headers = { ...config.headers, 'Content-Type': ContentTypeEnum.Json };
-    return backoff.then((config) => instance.request(config));
+    return backoff.then((config) => instance.request(config as InternalAxiosRequestConfig));
   },
 };
 
