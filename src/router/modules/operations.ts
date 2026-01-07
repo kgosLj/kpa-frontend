@@ -34,6 +34,15 @@ export default [
           requireAdmin: true,
         },
       },
+      {
+        path: 'scaling',
+        name: 'QuickScaling',
+        component: () => import('@/pages/operations/scaling/index.vue'),
+        meta: {
+          title: '快速扩容',
+          requireAdmin: true,
+        },
+      },
     ],
   },
 ];

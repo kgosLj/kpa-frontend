@@ -772,3 +772,42 @@ export function deleteHPA(clusterId: string, namespace: string, name: string) {
     },
   });
 }
+/**
+ * 快速扩缩容 (同时调整 Deployment 和 HPA)
+ */
+export function quickScaleWorkload(
+  clusterId: string,
+  data: {
+    namespace: string;
+    kind: string;
+    name: string;
+    replicas: number;
+  },
+) {
+  return request.patch({
+    url: `/clusters/${clusterId}/workloads/quick-scale`,
+    data,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
+ * 部分更新 HPA (例如调整最小/最大副本数)
+ */
+export function patchHPA(
+  clusterId: string,
+  namespace: string,
+  name: string,
+  spec: Partial<HPA['spec']>
+) {
+  return request.patch<HPA>({
+    url: `/clusters/${clusterId}/proxy/apis/autoscaling/v2/namespaces/${namespace}/horizontalpodautoscalers/${name}`,
+    data: { spec },
+    headers: {
+      'X-Current-Cluster': clusterId,
+      'Content-Type': 'application/merge-patch+json',
+    },
+  });
+}
