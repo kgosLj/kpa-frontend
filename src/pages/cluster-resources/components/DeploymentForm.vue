@@ -716,37 +716,47 @@ function generateEditYaml(): string {
     if (c.args) container.args = c.args;
     if (c.workingDir) container.workingDir = c.workingDir;
     
-    // 端口
-    if (formContainer.ports.length > 0) {
-      container.ports = formContainer.ports.filter(p => p.containerPort).map(p => ({
-        containerPort: p.containerPort,
-        protocol: p.protocol,
-      }));
+    // 端口：完全由表单决定
+    const allPorts = formContainer.ports.filter(p => p.containerPort).map(p => ({
+      containerPort: p.containerPort,
+      protocol: p.protocol,
+    }));
+    // 保留非表单管理的端口 (如果有的话，目前表单接管了所有端口配置)
+    if (allPorts.length > 0) {
+      container.ports = allPorts;
     } else if (c.ports) {
-      container.ports = c.ports;
+      // 如果表单为空，且原始有数据，检查是否需要保留（这里简单处理，如果表单清空了就清空）
+      // 如果业务上需要保留非表单支持的字段，则需要更细粒度的过滤
+      container.ports = []; 
     }
     
-    // 环境变量
-    if (formContainer.env.length > 0) {
-      container.env = formContainer.env.filter(e => e.name).map(e => ({
-        name: e.name,
-        value: e.value,
-      }));
+    // 环境变量：完全由表单决定（针对直接键值对类型）
+    const formEnv = (formContainer.env || []).filter(e => e.name).map(e => ({
+      name: e.name,
+      value: e.value,
+    }));
+    // 过滤掉原始数据中属于表单管理范围的 env（即非 valueFrom 的）
+    const origOtherEnv = (c.env || []).filter((e: any) => e.valueFrom);
+    const allEnv = [...origOtherEnv, ...formEnv];
+    if (allEnv.length > 0) {
+      container.env = allEnv;
     } else if (c.env) {
-      container.env = c.env;
+      container.env = [];
     }
     
-    // envFrom（从 ConfigMap 注入所有环境变量）
-    const envFromList = (formContainer.envFrom || []).filter(ef => ef.configMapName).map(ef => ({
+    // envFrom（从 ConfigMap 注入所有环境变量）：完全由表单决定
+    const formEnvFrom = (formContainer.envFrom || []).filter(ef => ef.configMapName).map(ef => ({
       configMapRef: {
         name: ef.configMapName
       }
     }));
-    if (envFromList.length > 0) {
-      container.envFrom = envFromList;
+    // 过滤掉原始数据中的 ConfigMapRef，保留 SecretRef 等其他类型
+    const origOtherEnvFrom = (c.envFrom || []).filter((ef: any) => !ef.configMapRef);
+    const allEnvFrom = [...origOtherEnvFrom, ...formEnvFrom];
+    if (allEnvFrom.length > 0) {
+      container.envFrom = allEnvFrom;
     } else if (c.envFrom) {
-      // 保留原始 envFrom
-      container.envFrom = c.envFrom;
+      container.envFrom = [];
     }
     
     // 资源
@@ -806,22 +816,20 @@ function generateEditYaml(): string {
     if (c.terminationMessagePath) container.terminationMessagePath = c.terminationMessagePath;
     if (c.terminationMessagePolicy) container.terminationMessagePolicy = c.terminationMessagePolicy;
     
-    // 处理 volumeMounts：合并原始挂载和表单中的 ConfigMap 挂载
+    // 处理 volumeMounts：完全由表单决定 ConfigMap 类型的挂载
     const origVolumeMounts = c.volumeMounts || [];
     const formVolumeMounts = (formContainer.volumeMounts || []).filter(vm => vm.configMapName && vm.mountPath).map(vm => ({
       name: `configmap-${vm.configMapName}`,
       mountPath: vm.mountPath,
     }));
-    // 过滤掉原始中已被表单覆盖的 ConfigMap 挂载，保留其他类型挂载
+    
+    // 过滤掉所有原始中的 ConfigMap 挂载，因为它们已经由表单接管
     const filteredOrigMounts = origVolumeMounts.filter((vm: any) => {
-      // 检查是否是 ConfigMap 卷挂载（通过 name 前缀或 mountPath 判断）
-      const isConfigMapMount = vm.name?.startsWith('configmap-');
-      if (isConfigMapMount) {
-        // 如果表单中有相同的挂载路径，则移除原始的
-        return !formVolumeMounts.some(fvm => fvm.mountPath === vm.mountPath);
-      }
-      return true; // 保留非 ConfigMap 的挂载
+      // 检查该挂载对应的卷是否是 ConfigMap 类型
+      const volume = original.spec?.template?.spec?.volumes?.find((v: any) => v.name === vm.name);
+      return !volume?.configMap; // 仅保留非 ConfigMap 的挂载
     });
+    
     const allVolumeMounts = [...filteredOrigMounts, ...formVolumeMounts];
     if (allVolumeMounts.length > 0) {
       container.volumeMounts = allVolumeMounts;
@@ -1250,10 +1258,14 @@ defineExpose({
 .deployment-form {
   .labels-editor,
   .ports-editor,
-  .env-editor {
+  .env-editor,
+  .envfrom-editor,
+  .volume-editor {
     .label-row,
     .port-row,
-    .env-row {
+    .env-row,
+    .envfrom-row,
+    .volume-row {
       display: flex;
       align-items: center;
       gap: 8px;

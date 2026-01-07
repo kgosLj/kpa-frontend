@@ -44,7 +44,6 @@
               <t-option value="secret" label="Secret" />
               <t-option value="cluster" label="Cluster" />
               <t-option value="namespace" label="Namespace" />
-              <t-option value="project" label="Project" />
             </t-select>
           </t-form-item>
 
@@ -252,12 +251,6 @@ const columns = [
     colKey: 'username',
     title: '用户',
     width: 120,
-  },
-  {
-    colKey: 'project_name',
-    title: '项目',
-    width: 150,
-    ellipsis: true,
   },
   {
     colKey: 'cluster_name',

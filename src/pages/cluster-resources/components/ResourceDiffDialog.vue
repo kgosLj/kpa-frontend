@@ -37,27 +37,7 @@
           </template>
         </t-alert>
 
-        <!-- 变更摘要 -->
-        <div v-if="diffData.exists && keyChanges.length > 0" class="summary-section">
-          <h4>关键变更摘要：</h4>
-          <div class="key-changes">
-            <div v-for="change in keyChanges" :key="change.path" class="key-change-item">
-              <t-tag
-                :theme="getChangeTheme(change.type)"
-                size="small"
-                variant="outline"
-              >
-                {{ getChangeLabel(change.type) }}
-              </t-tag>
-              <span class="change-path">{{ formatPath(change.path) }}</span>
-              <span v-if="change.old_value && change.new_value" class="change-values">
-                <code>{{ truncate(change.old_value, 30) }}</code>
-                <span class="arrow">→</span>
-                <code>{{ truncate(change.new_value, 30) }}</code>
-              </span>
-            </div>
-          </div>
-        </div>
+
 
         <!-- Diff 视图 -->
         <div v-if="diffData.exists && diffData.old_yaml" class="diff-section">
@@ -112,20 +92,7 @@ const confirmBtn = computed(() => ({
   disabled: props.loading,
 }));
 
-// 提取关键变更（限制数量）
-const keyChanges = computed(() => {
-  if (!props.diffData?.changes) return [];
-  // 优先显示重要字段的变更
-  const importantPaths = ['spec.replicas', 'spec.template.spec.containers', 'metadata.labels'];
-  const sorted = [...props.diffData.changes].sort((a, b) => {
-    const aImportant = importantPaths.some(p => a.path.includes(p));
-    const bImportant = importantPaths.some(p => b.path.includes(p));
-    if (aImportant && !bImportant) return -1;
-    if (!aImportant && bImportant) return 1;
-    return 0;
-  });
-  return sorted.slice(0, 5);
-});
+
 
 // 检测高风险变更
 const riskWarnings = computed(() => {
@@ -237,54 +204,7 @@ const handleClose = () => {
   }
 }
 
-.summary-section {
-  margin-bottom: 16px;
-  padding: 12px;
-  background: var(--td-bg-color-container);
-  border-radius: var(--td-radius-default);
 
-  h4 {
-    margin: 0 0 12px 0;
-    font-size: 14px;
-    font-weight: 500;
-  }
-
-  .key-changes {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .key-change-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-
-    .change-path {
-      font-weight: 500;
-      color: var(--td-text-color-primary);
-    }
-
-    .change-values {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-
-      code {
-        padding: 2px 6px;
-        background: var(--td-bg-color-page);
-        border-radius: 3px;
-        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-        font-size: 12px;
-      }
-
-      .arrow {
-        color: var(--td-text-color-secondary);
-      }
-    }
-  }
-}
 
 .diff-section {
   margin-bottom: 16px;

@@ -30,17 +30,29 @@ export interface K8sListResponse<T = K8sResource> {
 // Deployment 相关接口
 export interface DeploymentSpec {
   replicas?: number;
+  strategy?: {
+    type: string;
+    rollingUpdate?: {
+      maxSurge?: number | string;
+      maxUnavailable?: number | string;
+    };
+  };
   selector: {
     matchLabels: Record<string, string>;
   };
   template: {
     metadata: {
       labels: Record<string, string>;
+      annotations?: Record<string, string>;
     };
     spec: {
       containers: Array<{
         name: string;
         image: string;
+        imagePullPolicy?: string;
+        command?: string[];
+        args?: string[];
+        workingDir?: string;
         ports?: Array<{
           containerPort: number;
           protocol?: string;
@@ -50,11 +62,47 @@ export interface DeploymentSpec {
           value?: string;
           valueFrom?: any;
         }>;
+        envFrom?: Array<{
+          configMapRef?: { name: string };
+          secretRef?: { name: string };
+        }>;
+        volumeMounts?: Array<{
+          name: string;
+          mountPath: string;
+          readOnly?: boolean;
+          subPath?: string;
+        }>;
         resources?: {
           requests?: Record<string, string>;
           limits?: Record<string, string>;
         };
+        livenessProbe?: any;
+        readinessProbe?: any;
+        startupProbe?: any;
+        securityContext?: any;
       }>;
+      volumes?: Array<{
+        name: string;
+        configMap?: {
+          name: string;
+          items?: Array<{ key: string; path: string }>;
+        };
+        secret?: {
+          secretName: string;
+        };
+        emptyDir?: any;
+        hostPath?: any;
+        persistentVolumeClaim?: {
+          claimName: string;
+        };
+      }>;
+      restartPolicy?: string;
+      terminationGracePeriodSeconds?: number;
+      dnsPolicy?: string;
+      serviceAccountName?: string;
+      serviceAccount?: string;
+      securityContext?: any;
+      schedulerName?: string;
     };
   };
 }
