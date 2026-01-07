@@ -157,6 +157,36 @@ export interface Secret extends K8sResource {
   stringData?: Record<string, string>;
 }
 
+// HPA 相关接口
+export interface HPA extends K8sResource {
+  spec: {
+    scaleTargetRef: {
+      apiVersion: string;
+      kind: string;
+      name: string;
+    };
+    minReplicas?: number;
+    maxReplicas: number;
+    metrics?: Array<{
+      type: string;
+      resource?: {
+        name: string;
+        target: {
+          type: string;
+          averageUtilization?: number;
+          averageValue?: string;
+        };
+      };
+    }>;
+  };
+  status?: {
+    lastScaleTime?: string;
+    currentReplicas: number;
+    desiredReplicas: number;
+    currentMetrics?: any[];
+  };
+}
+
 // API 调用函数
 
 /**
@@ -675,6 +705,70 @@ export function getPodLogs(
     },
     requestOptions: {
       isTransformResponse: false,
+    },
+  });
+}
+
+// HPA API
+
+/**
+ * 获取 HPA 列表
+ */
+export function getHPAs(clusterId: string, namespace: string) {
+  return request.get<K8sListResponse<HPA>>({
+    url: `/clusters/${clusterId}/proxy/apis/autoscaling/v2/namespaces/${namespace}/horizontalpodautoscalers`,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
+ * 获取单个 HPA
+ */
+export function getHPA(clusterId: string, namespace: string, name: string) {
+  return request.get<HPA>({
+    url: `/clusters/${clusterId}/proxy/apis/autoscaling/v2/namespaces/${namespace}/horizontalpodautoscalers/${name}`,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
+ * 创建 HPA
+ */
+export function createHPA(clusterId: string, namespace: string, data: HPA) {
+  return request.post<HPA>({
+    url: `/clusters/${clusterId}/proxy/apis/autoscaling/v2/namespaces/${namespace}/horizontalpodautoscalers`,
+    data,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
+ * 更新 HPA
+ */
+export function updateHPA(clusterId: string, namespace: string, name: string, data: HPA) {
+  return request.put<HPA>({
+    url: `/clusters/${clusterId}/proxy/apis/autoscaling/v2/namespaces/${namespace}/horizontalpodautoscalers/${name}`,
+    data,
+    headers: {
+      'X-Current-Cluster': clusterId,
+    },
+  });
+}
+
+/**
+ * 删除 HPA
+ */
+export function deleteHPA(clusterId: string, namespace: string, name: string) {
+  return request.delete({
+    url: `/clusters/${clusterId}/proxy/apis/autoscaling/v2/namespaces/${namespace}/horizontalpodautoscalers/${name}`,
+    headers: {
+      'X-Current-Cluster': clusterId,
     },
   });
 }

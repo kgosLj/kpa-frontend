@@ -49,6 +49,10 @@
           <t-tab-panel value="secrets" label="Secrets">
             <secrets-view />
           </t-tab-panel>
+
+          <t-tab-panel value="hpas" label="HPAs">
+            <hpas-view />
+          </t-tab-panel>
         </t-tabs>
       </div>
 
@@ -69,6 +73,7 @@ import DeploymentsView from './deployments.vue';
 import ServicesView from './services.vue';
 import ConfigmapsView from './configmaps.vue';
 import SecretsView from './secrets.vue';
+import HpasView from './hpas.vue';
 
 const route = useRoute();
 const store = useClusterResourceStore();
@@ -149,7 +154,7 @@ const getEnvironmentLabel = (environment?: string): string => {
 };
 
 // 处理项目变更
-const handleProjectChange = async (value: string | number) => {
+const handleProjectChange = async (value: any) => {
   const projectId = String(value);
   selectedNamespaceKey.value = '';
   store.reset();
@@ -179,7 +184,7 @@ const handleProjectChange = async (value: string | number) => {
 };
 
 // 处理命名空间变更
-const handleNamespaceChange = (value: string | number) => {
+const handleNamespaceChange = (value: any) => {
   const namespaceId = String(value);
   const selected = namespaces.value.find(ns => String(ns.id) === namespaceId);
   

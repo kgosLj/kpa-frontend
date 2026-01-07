@@ -145,7 +145,6 @@ const initialClusterId = (route.params.clusterId as string) || (route.query.clus
 const initialBackupName = route.query.backupName as string;
 
 const COLUMNS: PrimaryTableCol<TableRowData>[] = [
-  { title: '恢复ID', colKey: 'id', width: 250, ellipsis: true },
   { title: '源备份', colKey: 'backup_name', width: 180 },
   { title: '源集群', colKey: 'source_cluster_name', width: 150 },
   { title: '目标集群', colKey: 'target_cluster_name', width: 150 },
