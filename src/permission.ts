@@ -52,6 +52,16 @@ router.beforeEach(async (to, from, next) => {
         }
       }
       if (router.hasRoute(to.name)) {
+        // 检查是否需要管理员权限
+        if (to.meta?.requireAdmin) {
+          const userRoles = userStore.userInfo?.roles || [];
+          // super_admin 是超级管理员，ClusterAdmin 是集群管理员角色
+          const hasAccess = userRoles.includes('super_admin') || userRoles.includes('ClusterAdmin');
+          if (!hasAccess) {
+            next('/result/403');
+            return;
+          }
+        }
         next();
       } else {
         next(`/`);

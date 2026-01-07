@@ -44,6 +44,7 @@ const { navData } = defineProps({
 const active = computed(() => getActive());
 
 const { locale } = useLocale();
+
 const list = computed(() => {
   return getMenuList(navData);
 });

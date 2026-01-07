@@ -12,6 +12,7 @@ export interface RouteMeta {
   keepAlive?: boolean;
   frameSrc?: string;
   frameBlank?: boolean;
+  requireAdmin?: boolean; // 是否需要管理员权限才能访问
 }
 
 export interface MenuRoute {
