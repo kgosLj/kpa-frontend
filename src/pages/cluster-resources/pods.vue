@@ -289,7 +289,36 @@ const formatAge = (timestamp?: string) => {
 
 // 查看详情
 const handleViewDetail = (pod: Pod) => {
-  detailYaml.value = yaml.dump(pod, { indent: 2, noRefs: true });
+  // 深拷贝并清理字段
+  const cleanPod = JSON.parse(JSON.stringify(pod));
+
+  // 1. 移除系统字段
+  if (cleanPod.metadata) {
+    delete cleanPod.metadata.managedFields;
+    delete cleanPod.metadata.uid;
+    delete cleanPod.metadata.resourceVersion;
+    delete cleanPod.metadata.creationTimestamp;
+    delete cleanPod.metadata.generation;
+    delete cleanPod.metadata.selfLink;
+    delete cleanPod.metadata.ownerReferences;
+  }
+  
+  // 2. 移除状态字段
+  delete cleanPod.status;
+
+  // 3. 重新构建对象
+  const orderedPod = {
+    apiVersion: cleanPod.apiVersion || 'v1',
+    kind: cleanPod.kind || 'Pod',
+    metadata: cleanPod.metadata,
+    spec: cleanPod.spec,
+  };
+
+  detailYaml.value = yaml.dump(orderedPod, { 
+    indent: 2, 
+    noRefs: true,
+    sortKeys: false 
+  });
   detailVisible.value = true;
 };
 
@@ -392,14 +421,15 @@ onUnmounted(() => {
     overflow-y: auto;
 
     .yaml-content {
-      background: var(--td-bg-color-container);
-      padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
+      background: var(--td-bg-color-secondarycontainer);
+      padding: 16px;
       border-radius: var(--td-radius-default);
-      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-      font-size: 12px;
+      font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
       line-height: 1.6;
       white-space: pre-wrap;
       word-break: break-all;
+      color: var(--td-text-color-primary);
     }
   }
 }

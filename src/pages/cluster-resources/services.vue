@@ -57,9 +57,9 @@
       </template>
       
       <template #op="{ row }">
-        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-        <t-divider layout="vertical" />
         <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="warning" @click="handleRollback(row)">回滚</t-link>
         <t-divider layout="vertical" />
         <t-popconfirm
           content="确定删除该 Service 吗？此操作不可恢复。"
@@ -104,6 +104,18 @@
       :confirm-text="formMode === 'create' ? '确认部署' : '确认更新'"
       @confirm="onConfirmDeployAfterDiff"
     />
+
+    <!-- 回滚对话框 -->
+    <rollback-dialog
+      v-model:visible="rollbackDialogVisible"
+      :versions="rollbackVersions"
+      :loading="rollbackLoading"
+      :cluster-id="clusterId"
+      :namespace="namespace"
+      :name="currentRollbackResource?.name || ''"
+      kind="Service"
+      @confirm="handleConfirmRollback"
+    />
   </div>
 </template>
 
@@ -112,10 +124,12 @@ import { ref, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon, AddIcon } from 'tdesign-icons-vue-next';
 import { getServices, deleteService, type Service, type ResourceDiffResponse } from '@/api/k8s-resources';
+import { getHistoryVersions, rollbackToVersion, type HistoryVersion } from '@/api/rollback';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
 import ServiceForm from './components/ServiceForm.vue';
 import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
+import RollbackDialog from './components/RollbackDialog.vue';
 
 const store = useClusterResourceStore();
 
@@ -133,7 +147,7 @@ const COLUMNS = [
   { title: 'Cluster IP', colKey: 'clusterIP', width: 150 },
   { title: '端口', colKey: 'ports', ellipsis: true },
   { title: '创建时间', colKey: 'age', width: 150 },
-  { title: '操作', colKey: 'op', width: 180, fixed: 'right' as const },
+  { title: '操作', colKey: 'op', width: 220, fixed: 'right' as const },
 ];
 
 // 过滤数据
@@ -158,6 +172,12 @@ const editingService = ref<Service | null>(null);
 const diffDialogVisible = ref(false);
 const diffLoading = ref(false);
 const diffData = ref<ResourceDiffResponse | null>(null);
+
+// 回滚对话框状态
+const rollbackDialogVisible = ref(false);
+const rollbackVersions = ref<HistoryVersion[]>([]);
+const rollbackLoading = ref(false);
+const currentRollbackResource = ref<{ name: string; kind: string } | null>(null);
 
 // 创建
 const handleCreate = () => {
@@ -224,7 +244,35 @@ const formatAge = (timestamp?: string) => {
 
 // 查看详情
 const handleViewDetail = (service: Service) => {
-  detailYaml.value = yaml.dump(service, { indent: 2, noRefs: true });
+  // 深拷贝并清理字段
+  const cleanService = JSON.parse(JSON.stringify(service));
+
+  // 1. 移除系统字段
+  if (cleanService.metadata) {
+    delete cleanService.metadata.managedFields;
+    delete cleanService.metadata.uid;
+    delete cleanService.metadata.resourceVersion;
+    delete cleanService.metadata.creationTimestamp;
+    delete cleanService.metadata.generation;
+    delete cleanService.metadata.selfLink;
+  }
+  
+  // 2. 移除状态字段
+  delete cleanService.status;
+
+  // 3. 重新构建对象以控制字段顺序 (apiVersion -> kind -> metadata -> spec)
+  const orderedService = {
+    apiVersion: cleanService.apiVersion || 'v1',
+    kind: cleanService.kind || 'Service',
+    metadata: cleanService.metadata,
+    spec: cleanService.spec,
+  };
+
+  detailYaml.value = yaml.dump(orderedService, { 
+    indent: 2, 
+    noRefs: true,
+    sortKeys: false // 保持我们构建的顺序
+  });
   detailVisible.value = true;
 };
 
@@ -236,6 +284,53 @@ const handleDelete = async (service: Service) => {
     await fetchData();
   } catch (e: any) {
     MessagePlugin.error(e.message || '删除失败');
+  }
+};
+
+// 回滚
+const handleRollback = async (service: Service) => {
+  currentRollbackResource.value = {
+    name: service.metadata.name,
+    kind: 'Service',
+  };
+  rollbackDialogVisible.value = true;
+  rollbackLoading.value = true;
+  rollbackVersions.value = [];
+  
+  try {
+    const versions = await getHistoryVersions(clusterId.value, {
+      namespace: namespace.value,
+      name: service.metadata.name,
+      kind: 'Service',
+    });
+    rollbackVersions.value = versions;
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '获取历史版本失败');
+  } finally {
+    rollbackLoading.value = false;
+  }
+};
+
+// 确认回滚
+const handleConfirmRollback = async (version: number) => {
+  if (!currentRollbackResource.value) return;
+  
+  rollbackLoading.value = true;
+  try {
+    await rollbackToVersion(clusterId.value, {
+      namespace: namespace.value,
+      name: currentRollbackResource.value.name,
+      kind: 'Service',
+      version: version,
+    });
+    
+    MessagePlugin.success(`成功回滚到版本 ${version}`);
+    rollbackDialogVisible.value = false;
+    await fetchData();
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '回滚失败');
+  } finally {
+    rollbackLoading.value = false;
   }
 };
 
@@ -280,13 +375,14 @@ watch(
 }
 
 .yaml-content {
-  background: var(--td-bg-color-container);
-  padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
+  background: var(--td-bg-color-secondarycontainer);
+  padding: 16px;
   border-radius: var(--td-radius-default);
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 12px;
+  font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
+  color: var(--td-text-color-primary);
 }
 </style>

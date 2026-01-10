@@ -211,10 +211,82 @@ watch(() => store.selectedNamespace, (newVal) => {
   }
 });
 
+// 从 localStorage 恢复状态
+const restoreFromStorage = async () => {
+  // 如果已经有选中的项目（从 localStorage 加载），则恢复命名空间列表
+  if (store.selectedProjectId && !route.query.projectId) {
+    loading.value = true;
+    try {
+      await store.loadNamespaces(store.selectedProjectId);
+      
+      // 如果有保存的命名空间，验证它是否仍然存在
+      if (store.selectedNamespace) {
+        const savedNs = store.availableNamespaces.find(
+          ns => ns.cluster_id === store.selectedNamespace?.cluster_id && 
+                ns.namespace === store.selectedNamespace?.namespace
+        );
+        
+        if (savedNs) {
+          // 命名空间仍然存在，使用保存的
+          selectedNamespaceKey.value = `${savedNs.cluster_id}|${savedNs.namespace}`;
+          store.setNamespace(savedNs);
+        } else if (store.availableNamespaces.length > 0) {
+          // 命名空间不存在了，选择第一个
+          const firstNs = store.availableNamespaces[0];
+          selectedNamespaceKey.value = `${firstNs.cluster_id}|${firstNs.namespace}`;
+          store.setNamespace(firstNs);
+        } else {
+          // 没有可用的命名空间，清除选择
+          store.reset();
+        }
+      } else if (store.availableNamespaces.length > 0) {
+        // 没有保存的命名空间，选择第一个
+        const firstNs = store.availableNamespaces[0];
+        selectedNamespaceKey.value = `${firstNs.cluster_id}|${firstNs.namespace}`;
+        store.setNamespace(firstNs);
+      }
+    } catch (e: any) {
+      console.error('恢复项目信息失败:', e);
+      MessagePlugin.error(e.message || '恢复项目信息失败');
+      // 如果恢复失败，清除保存的状态
+      store.reset();
+    } finally {
+      loading.value = false;
+    }
+  } else if (store.selectedNamespace && store.availableNamespaces.length === 0) {
+    // 如果有保存的命名空间但没有加载命名空间列表（可能是直接访问页面）
+    // 需要先加载命名空间列表
+    if (store.selectedProjectId) {
+      loading.value = true;
+      try {
+        await store.loadNamespaces(store.selectedProjectId);
+        // 同步 selectedNamespaceKey
+        if (store.selectedNamespace) {
+          selectedNamespaceKey.value = `${store.selectedNamespace.cluster_id}|${store.selectedNamespace.namespace}`;
+        }
+      } catch (e: any) {
+        console.error('加载命名空间列表失败:', e);
+        store.reset();
+      } finally {
+        loading.value = false;
+      }
+    }
+  }
+};
+
 // 初始化
 onMounted(async () => {
+  // 先同步初始状态（如果 store 中已经有数据）
+  if (store.selectedNamespace) {
+    selectedNamespaceKey.value = `${store.selectedNamespace.cluster_id}|${store.selectedNamespace.namespace}`;
+  }
+  
   await loadClusters();
   await loadFromRoute();
+  // 如果路由没有提供 projectId，尝试从 localStorage 恢复
+  if (!route.query.projectId) {
+    await restoreFromStorage();
+  }
 });
 </script>
 

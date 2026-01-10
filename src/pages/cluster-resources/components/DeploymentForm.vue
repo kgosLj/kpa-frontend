@@ -396,6 +396,7 @@ import * as yaml from 'js-yaml';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { DeleteIcon, AddIcon, FileCopyIcon } from 'tdesign-icons-vue-next';
 import { createDeployment, updateDeployment, diffResource, getConfigMaps, type Deployment, type ResourceDiffResponse, type ConfigMap } from '@/api/k8s-resources';
+import { saveResourceHistory } from '@/api/rollback';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 
 // Props
@@ -1234,6 +1235,34 @@ async function handleSubmit() {
       await updateDeployment(clusterId.value, namespace.value, formData.value.name, deploymentData);
       MessagePlugin.success('Deployment 更新成功');
     }
+
+    // 自动保存历史版本（异步，不阻塞主流程）
+    console.log('[Rollback] 准备保存历史版本:', {
+      clusterId: clusterId.value,
+      namespace: deploymentData.metadata.namespace || namespace.value,
+      name: deploymentData.metadata.name,
+      kind: 'Deployment',
+      mode: props.mode,
+    });
+    
+    saveResourceHistory(clusterId.value, {
+      namespace: deploymentData.metadata.namespace || namespace.value,
+      name: deploymentData.metadata.name,
+      kind: 'Deployment',
+      yaml_content: generatedYaml.value,
+      description: props.mode === 'create' ? '创建时自动保存' : '更新时自动保存',
+    }).then(() => {
+      console.log('[Rollback] 历史版本保存成功');
+    }).catch(err => {
+      console.error('[Rollback] 保存历史版本失败:', err);
+      console.error('[Rollback] 错误详情:', {
+        message: err.message,
+        response: err.response,
+        status: err.response?.status,
+        data: err.response?.data,
+      });
+      // 不影响主流程，只记录错误
+    });
 
     emit('success');
   } catch (e: any) {

@@ -80,6 +80,37 @@ const store = useClusterResourceStore();
 
 const activeTab = ref('deployments');
 
+// LocalStorage keys
+const STORAGE_KEY_PROJECT = 'kpa_selected_project_id';
+const STORAGE_KEY_NAMESPACE = 'kpa_selected_namespace_key';
+
+// Helper functions for localStorage
+const saveToStorage = (key: string, value: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error('Failed to save to localStorage:', e);
+  }
+};
+
+const loadFromStorage = <T>(key: string): T | null => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : null;
+  } catch (e) {
+    console.error('Failed to load from localStorage:', e);
+    return null;
+  }
+};
+
+const removeFromStorage = (key: string) => {
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {
+    console.error('Failed to remove from localStorage:', e);
+  }
+};
+
 // 数据状态
 const projects = ref<Project[]>([]);
 const namespaces = ref<ProjectNamespace[]>([]);
@@ -87,9 +118,10 @@ const clusters = ref<Cluster[]>([]);
 const loadingProjects = ref(false);
 const loadingNamespaces = ref(false);
 
-// 选中状态
-const selectedProjectId = ref<string>('');
-const selectedNamespaceKey = ref<string>('');
+// 选中状态 - 从 localStorage 恢复
+const selectedProjectId = ref<string>(loadFromStorage<string>(STORAGE_KEY_PROJECT) || '');
+const savedNsKey = loadFromStorage<string | number>(STORAGE_KEY_NAMESPACE);
+const selectedNamespaceKey = ref<string>(savedNsKey !== null ? String(savedNsKey) : '');
 
 // 项目选项
 const projectOptions = computed((): SelectOption[] => {
@@ -120,7 +152,7 @@ const namespaceOptions = computed((): SelectOption[] => {
     
     return {
       label: `${ns.namespace} / ${envLabel}`,
-      value: ns.id,
+      value: String(ns.id),
     };
   });
 });
@@ -158,11 +190,16 @@ const handleProjectChange = async (value: any) => {
   const projectId = String(value);
   selectedNamespaceKey.value = '';
   store.reset();
+  removeFromStorage(STORAGE_KEY_NAMESPACE);
   
   if (!projectId) {
     namespaces.value = [];
+    removeFromStorage(STORAGE_KEY_PROJECT);
     return;
   }
+  
+  // 保存项目选择
+  saveToStorage(STORAGE_KEY_PROJECT, projectId);
   
   loadingNamespaces.value = true;
   try {
@@ -173,7 +210,8 @@ const handleProjectChange = async (value: any) => {
     // 如果只有一个命名空间，自动选中
     if (namespaces.value.length === 1) {
       const ns = namespaces.value[0];
-      selectedNamespaceKey.value = `${ns.cluster_id}|${ns.namespace}`;
+      selectedNamespaceKey.value = String(ns.id);
+      saveToStorage(STORAGE_KEY_NAMESPACE, String(ns.id));
       store.setNamespace(ns);
     }
   } catch (e: any) {
@@ -193,6 +231,9 @@ const handleNamespaceChange = (value: any) => {
     return;
   }
 
+  // 保存命名空间选择
+  saveToStorage(STORAGE_KEY_NAMESPACE, namespaceId);
+  
   // 更新 store - 传入完整的 namespace 对象
   store.setNamespace(selected);
   
@@ -234,9 +275,58 @@ const initFromRoute = async () => {
   }
 };
 
+// 从 localStorage 恢复状态
+const restoreFromStorage = async () => {
+  // 如果路由有 projectId，优先使用路由参数
+  if (route.query.projectId) {
+    return;
+  }
+  
+  // 如果有保存的项目 ID
+  if (selectedProjectId.value) {
+    loadingNamespaces.value = true;
+    try {
+      // 加载命名空间列表
+      namespaces.value = await getProjectNamespaces(selectedProjectId.value);
+      store.selectedProjectId = selectedProjectId.value;
+      store.availableNamespaces = namespaces.value;
+      
+      // 如果有保存的命名空间 key，尝试恢复
+      if (selectedNamespaceKey.value) {
+        const savedNs = namespaces.value.find(ns => String(ns.id) === selectedNamespaceKey.value);
+        
+        if (savedNs) {
+          // 命名空间仍然存在，恢复选择
+          store.setNamespace(savedNs);
+          console.log('已恢复命名空间选择:', savedNs.namespace);
+        } else {
+          // 命名空间不存在了，清除保存的选择
+          console.warn('保存的命名空间不存在，已清除');
+          selectedNamespaceKey.value = '';
+          removeFromStorage(STORAGE_KEY_NAMESPACE);
+        }
+      }
+    } catch (e: any) {
+      console.error('恢复状态失败:', e);
+      MessagePlugin.error(e.message || '恢复状态失败');
+      // 清除无效的保存状态
+      selectedProjectId.value = '';
+      selectedNamespaceKey.value = '';
+      removeFromStorage(STORAGE_KEY_PROJECT);
+      removeFromStorage(STORAGE_KEY_NAMESPACE);
+    } finally {
+      loadingNamespaces.value = false;
+    }
+  }
+};
+
 onMounted(async () => {
   await Promise.all([loadProjects(), loadClusters()]);
   await initFromRoute();
+  // 如果路由没有提供 projectId，尝试从 localStorage 恢复
+  if (!route.query.projectId) {
+    await restoreFromStorage();
+  }
 });
 </script>
 

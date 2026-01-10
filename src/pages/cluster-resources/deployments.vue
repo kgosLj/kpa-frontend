@@ -77,8 +77,6 @@
         {{ formatAge(row.metadata.creationTimestamp) }}
       </template>
       <template #op="{ row }">
-        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-        <t-divider layout="vertical" />
         <t-link theme="primary" @click="handleViewLogs(row)">查看日志</t-link>
         <t-divider layout="vertical" />
         <t-link theme="primary" @click="handleFormEdit(row)">表单编辑</t-link>
@@ -88,6 +86,8 @@
         <t-link theme="primary" @click="handleScale(row)">扩缩容</t-link>
         <t-divider layout="vertical" />
         <t-link theme="success" @click="handleRedeploy(row)">重新部署</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="warning" @click="handleRollback(row)">回滚</t-link>
         <t-divider layout="vertical" />
         <t-popconfirm
           content="确定删除该 Deployment 吗？此操作不可恢复。"
@@ -284,6 +284,18 @@
         </div>
       </div>
     </t-dialog>
+
+    <!-- 回滚对话框 -->
+    <rollback-dialog
+      v-model:visible="rollbackDialogVisible"
+      :versions="rollbackVersions"
+      :loading="rollbackLoading"
+      :cluster-id="clusterId"
+      :namespace="namespace"
+      :name="currentRollbackResource?.name || ''"
+      kind="Deployment"
+      @confirm="handleConfirmRollback"
+    />
   </div>
 </template>
 
@@ -306,10 +318,12 @@ import {
   updateDeployment,
   type ResourceDiffResponse,
 } from '@/api/k8s-resources';
+import { getHistoryVersions, rollbackToVersion, type HistoryVersion } from '@/api/rollback';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import * as yaml from 'js-yaml';
 import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
 import DeploymentForm from './components/DeploymentForm.vue';
+import RollbackDialog from './components/RollbackDialog.vue';
 
 const router = useRouter();
 const store = useClusterResourceStore();
@@ -418,6 +432,12 @@ const followLogs = ref(false);
 const logContentRef = ref<HTMLElement | null>(null);
 const logTimer = ref<number | null>(null);
 const currentDeployment = ref<Deployment | null>(null);
+
+// 回滚对话框状态
+const rollbackDialogVisible = ref(false);
+const rollbackVersions = ref<HistoryVersion[]>([]);
+const rollbackLoading = ref(false);
+const currentRollbackResource = ref<{ name: string; kind: string } | null>(null);
 
 // 获取镜像列表
 const getImages = (deployment: Deployment) => {
@@ -898,6 +918,64 @@ const handleViewPods = (deployment: Deployment) => {
       labelSelector,
     },
   });
+};
+
+// 打开回滚对话框
+const handleRollback = async (deployment: Deployment) => {
+  // 验证必要的上下文信息
+  if (!clusterId.value || !namespace.value) {
+    MessagePlugin.warning('请先选择集群和命名空间');
+    return;
+  }
+
+  currentRollbackResource.value = {
+    name: deployment.metadata.name,
+    kind: 'Deployment',
+  };
+
+  rollbackLoading.value = true;
+  try {
+    const versions = await getHistoryVersions(clusterId.value, {
+      namespace: namespace.value,
+      name: deployment.metadata.name,
+      kind: 'Deployment',
+    });
+    rollbackVersions.value = versions;
+    rollbackDialogVisible.value = true;
+  } catch (error: any) {
+    MessagePlugin.error(error.message || '获取历史版本失败');
+  } finally {
+    rollbackLoading.value = false;
+  }
+};
+
+// 确认回滚
+const handleConfirmRollback = async (version: number) => {
+  if (!currentRollbackResource.value) return;
+
+  // 验证必要的上下文信息
+  if (!clusterId.value || !namespace.value) {
+    MessagePlugin.warning('请先选择集群和命名空间');
+    return;
+  }
+
+  rollbackLoading.value = true;
+  try {
+    await rollbackToVersion(clusterId.value, {
+      namespace: namespace.value,
+      name: currentRollbackResource.value.name,
+      kind: currentRollbackResource.value.kind as 'Deployment' | 'Service' | 'ConfigMap',
+      version,
+    });
+
+    MessagePlugin.success('回滚成功');
+    rollbackDialogVisible.value = false;
+    await fetchData(); // 刷新列表
+  } catch (error: any) {
+    MessagePlugin.error(error.message || '回滚失败');
+  } finally {
+    rollbackLoading.value = false;
+  }
 };
 
 // 监听命名空间变化，自动刷新数据

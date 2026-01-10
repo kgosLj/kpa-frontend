@@ -34,7 +34,9 @@
       hover
     >
       <template #name="{ row }">
-        <span class="resource-name">{{ row.metadata.name }}</span>
+        <t-link theme="primary" @click="handleViewDetail(row)">
+          {{ row.metadata.name }}
+        </t-link>
       </template>
       <template #dataCount="{ row }">
         {{ getDataCount(row) }}
@@ -43,9 +45,9 @@
         {{ formatAge(row.metadata.creationTimestamp) }}
       </template>
       <template #op="{ row }">
-        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-        <t-divider layout="vertical" />
         <t-link theme="primary" @click="handleEdit(row)">编辑</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="warning" @click="handleRollback(row)">回滚</t-link>
         <t-divider layout="vertical" />
         <t-popconfirm
           content="确定删除该 ConfigMap 吗？此操作不可恢复。"
@@ -64,14 +66,7 @@
       :footer="false"
     >
       <div class="detail-content">
-        <h4 style="margin-bottom: 10px;">配置数据</h4>
-        <div v-if="currentConfigMap?.data" class="data-section">
-          <div v-for="(value, key) in currentConfigMap.data" :key="key" class="data-item">
-            <div class="data-key">{{ key }}</div>
-            <pre class="data-value">{{ value }}</pre>
-          </div>
-        </div>
-        <t-empty v-else description="暂无配置数据" />
+        <pre class="yaml-content">{{ detailYaml }}</pre>
       </div>
     </t-dialog>
 
@@ -100,6 +95,18 @@
       :confirm-text="formMode === 'create' ? '确认部署' : '确认更新'"
       @confirm="onConfirmDeployAfterDiff"
     />
+
+    <!-- 回滚对话框 -->
+    <rollback-dialog
+      v-model:visible="rollbackDialogVisible"
+      :versions="rollbackVersions"
+      :loading="rollbackLoading"
+      :cluster-id="clusterId"
+      :namespace="namespace"
+      :name="currentRollbackResource?.name || ''"
+      kind="ConfigMap"
+      @confirm="handleConfirmRollback"
+    />
   </div>
 </template>
 
@@ -108,9 +115,12 @@ import { ref, computed, watch } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, SearchIcon, AddIcon } from 'tdesign-icons-vue-next';
 import { getConfigMaps, deleteConfigMap, type ConfigMap, type ResourceDiffResponse } from '@/api/k8s-resources';
+import { getHistoryVersions, rollbackToVersion, type HistoryVersion } from '@/api/rollback';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
+import * as yaml from 'js-yaml';
 import ConfigMapForm from './components/ConfigMapForm.vue';
 import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
+import RollbackDialog from './components/RollbackDialog.vue';
 
 const store = useClusterResourceStore();
 
@@ -137,9 +147,7 @@ const filteredData = computed(() => {
   );
 });
 
-// 详情对话框
-const detailVisible = ref(false);
-const currentConfigMap = ref<ConfigMap | null>(null);
+// 详情对话框（变量声明已移至 handleViewDetail 附近）
 
 // 创建/编辑对话框
 const formVisible = ref(false);
@@ -151,6 +159,12 @@ const editingConfigMap = ref<ConfigMap | null>(null);
 const diffDialogVisible = ref(false);
 const diffLoading = ref(false);
 const diffData = ref<ResourceDiffResponse | null>(null);
+
+// 回滚对话框状态
+const rollbackDialogVisible = ref(false);
+const rollbackVersions = ref<HistoryVersion[]>([]);
+const rollbackLoading = ref(false);
+const currentRollbackResource = ref<{ name: string; kind: string } | null>(null);
 
 // 创建
 const handleCreate = () => {
@@ -211,8 +225,40 @@ const formatAge = (timestamp?: string) => {
 };
 
 // 查看详情
+// 查看详情
+const detailVisible = ref(false);
+const detailYaml = ref('');
+const currentConfigMap = ref<ConfigMap | null>(null);
+
 const handleViewDetail = (configMap: ConfigMap) => {
-  currentConfigMap.value = configMap;
+  // 深拷贝并清理字段
+  const cleanConfigMap = JSON.parse(JSON.stringify(configMap));
+
+  // 1. 移除系统字段
+  if (cleanConfigMap.metadata) {
+    delete cleanConfigMap.metadata.managedFields;
+    delete cleanConfigMap.metadata.uid;
+    delete cleanConfigMap.metadata.resourceVersion;
+    delete cleanConfigMap.metadata.creationTimestamp;
+    delete cleanConfigMap.metadata.generation;
+    delete cleanConfigMap.metadata.selfLink;
+    delete cleanConfigMap.metadata.ownerReferences;
+  }
+  
+  // 3. 重新构建对象
+  const orderedConfigMap = {
+    apiVersion: cleanConfigMap.apiVersion || 'v1',
+    kind: cleanConfigMap.kind || 'ConfigMap',
+    metadata: cleanConfigMap.metadata,
+    data: cleanConfigMap.data,
+    binaryData: cleanConfigMap.binaryData,
+  };
+
+  detailYaml.value = yaml.dump(orderedConfigMap, { 
+    indent: 2, 
+    noRefs: true,
+    sortKeys: false 
+  });
   detailVisible.value = true;
 };
 
@@ -225,6 +271,53 @@ const handleDelete = async (configMap: ConfigMap) => {
     await fetchData();
   } catch (e: any) {
     MessagePlugin.error(e.message || '删除失败');
+  }
+};
+
+// 回滚
+const handleRollback = async (configMap: ConfigMap) => {
+  currentRollbackResource.value = {
+    name: configMap.metadata.name,
+    kind: 'ConfigMap',
+  };
+  rollbackDialogVisible.value = true;
+  rollbackLoading.value = true;
+  rollbackVersions.value = [];
+  
+  try {
+    const versions = await getHistoryVersions(clusterId.value, {
+      namespace: namespace.value,
+      name: configMap.metadata.name,
+      kind: 'ConfigMap',
+    });
+    rollbackVersions.value = versions;
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '获取历史版本失败');
+  } finally {
+    rollbackLoading.value = false;
+  }
+};
+
+// 确认回滚
+const handleConfirmRollback = async (version: number) => {
+  if (!currentRollbackResource.value) return;
+  
+  rollbackLoading.value = true;
+  try {
+    await rollbackToVersion(clusterId.value, {
+      namespace: namespace.value,
+      name: currentRollbackResource.value.name,
+      kind: 'ConfigMap',
+      version: version,
+    });
+    
+    MessagePlugin.success(`成功回滚到版本 ${version}`);
+    rollbackDialogVisible.value = false;
+    await fetchData();
+  } catch (e: any) {
+    MessagePlugin.error(e.message || '回滚失败');
+  } finally {
+    rollbackLoading.value = false;
   }
 };
 
@@ -274,31 +367,16 @@ watch(
 }
 
 .detail-content {
-  .data-section {
-    .data-item {
-      margin-bottom: var(--td-comp-margin-m);
-      border: 1px solid var(--td-border-level-1-color);
-      border-radius: var(--td-radius-default);
-      overflow: hidden;
-
-      .data-key {
-        padding: 8px 12px;
-        background: var(--td-bg-color-container);
-        font-weight: 500;
-        border-bottom: 1px solid var(--td-border-level-1-color);
-      }
-
-      .data-value {
-        margin: 0;
-        padding: 12px;
-        background: var(--td-bg-color-page);
-        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-        font-size: 12px;
-        line-height: 1.6;
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
-    }
+  .yaml-content {
+    background: var(--td-bg-color-secondarycontainer);
+    padding: 16px;
+    border-radius: var(--td-radius-default);
+    font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--td-text-color-primary);
   }
 }
 </style>
