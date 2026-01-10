@@ -31,6 +31,8 @@ const initTerminal = () => {
     theme: {
       background: '#1e1e1e',
     },
+    rows: 30,
+    cols: 120,
   });
 
   fitAddon = new FitAddon();
@@ -40,24 +42,39 @@ const initTerminal = () => {
   term.open(terminalRef.value);
   fitAddon.fit();
 
+  // 发送用户输入到 WebSocket
   term.onData((data) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
+      console.log('[Terminal] Sending input:', data.length, 'bytes');
       socket.send(data);
+    } else {
+      console.warn('[Terminal] WebSocket not ready, state:', socket?.readyState);
+    }
+  });
+
+  // 监听终端大小变化
+  term.onResize((size) => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      const resizeMsg = '4' + JSON.stringify({ cols: size.cols, rows: size.rows });
+      console.log('[Terminal] Sending resize:', size);
+      socket.send(resizeMsg);
     }
   });
   
-  // Handle resize
+  // Handle window resize
   window.addEventListener('resize', handleResize);
 };
 
 const handleResize = () => {
-  if (fitAddon) {
+  if (fitAddon && term) {
     fitAddon.fit();
+    console.log('[Terminal] Resized to:', term.cols, 'x', term.rows);
   }
 };
 
 const connectWebSocket = () => {
   if (socket) {
+    console.log('[WebSocket] Closing existing connection');
     socket.close();
   }
 
@@ -65,7 +82,6 @@ const connectWebSocket = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   
   // 获取 token（从 Pinia store 的持久化存储中）
-  // Pinia persist 插件将 token 存储在 localStorage 的 'user' 键下
   let token = '';
   try {
     const userStore = localStorage.getItem('user');
@@ -84,7 +100,6 @@ const connectWebSocket = () => {
   console.log('[WebSocket] Container:', props.container);
   
   // 构建 WebSocket URL
-  // 注意：直接连接到后端，不通过 Vite 代理
   // 后端地址：开发环境使用 localhost:8080，生产环境使用当前 host
   const backendHost = import.meta.env.DEV ? 'localhost:8080' : window.location.host;
   
@@ -94,10 +109,6 @@ const connectWebSocket = () => {
   const params = new URLSearchParams({
     container: props.container,
     command: '/bin/sh',
-    stdin: 'true',
-    stdout: 'true',
-    stderr: 'true',
-    tty: 'true',
   });
   
   // 如果有 token，添加到参数中
@@ -109,22 +120,54 @@ const connectWebSocket = () => {
   
   console.log('[WebSocket] Connecting to:', wsUrl);
   
+  // 创建 WebSocket 连接，设置二进制类型为 arraybuffer
   socket = new WebSocket(wsUrl);
+  socket.binaryType = 'arraybuffer';
 
   socket.onopen = () => {
     console.log('[WebSocket] Connected successfully');
     term?.write('\r\n\x1b[32mConnected to terminal.\x1b[0m\r\n');
-    handleResize();
+    
+    // 连接成功后发送初始终端大小
+    if (term) {
+      const resizeMsg = '4' + JSON.stringify({ cols: term.cols, rows: term.rows });
+      console.log('[WebSocket] Sending initial size:', term.cols, 'x', term.rows);
+      socket?.send(resizeMsg);
+    }
   };
 
   socket.onmessage = (event) => {
-    console.log('[WebSocket] Message received:', event.data.substring(0, 100));
-    term?.write(event.data);
+    try {
+      let data: string;
+      
+      // 处理二进制消息
+      if (event.data instanceof ArrayBuffer) {
+        const decoder = new TextDecoder('utf-8');
+        data = decoder.decode(event.data);
+        console.log('[WebSocket] Binary message received:', data.length, 'bytes');
+      } else if (typeof event.data === 'string') {
+        data = event.data;
+        console.log('[WebSocket] Text message received:', data.length, 'bytes');
+      } else {
+        console.warn('[WebSocket] Unknown message type:', typeof event.data);
+        return;
+      }
+      
+      // 写入终端
+      if (data && term) {
+        term.write(data);
+      }
+    } catch (error) {
+      console.error('[WebSocket] Error processing message:', error);
+    }
   };
 
   socket.onclose = (event) => {
     console.log('[WebSocket] Connection closed:', event.code, event.reason);
     term?.write(`\r\n\x1b[31mConnection closed (Code: ${event.code}).\x1b[0m\r\n`);
+    if (event.reason) {
+      term?.write(`\x1b[31mReason: ${event.reason}\x1b[0m\r\n`);
+    }
   };
 
   socket.onerror = (error) => {
@@ -134,15 +177,19 @@ const connectWebSocket = () => {
 };
 
 watch(() => [props.clusterId, props.namespace, props.podName], () => {
-   // Reconnect if props change? Usually this component is mounted new.
+   // Reconnect if props change
+   console.log('[Terminal] Props changed, reconnecting...');
+   connectWebSocket();
 });
 
 onMounted(() => {
+  console.log('[Terminal] Component mounted');
   initTerminal();
   connectWebSocket();
 });
 
 onBeforeUnmount(() => {
+  console.log('[Terminal] Component unmounting');
   if (socket) {
     socket.close();
   }
