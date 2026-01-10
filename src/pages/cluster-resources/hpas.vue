@@ -92,6 +92,18 @@
       :loading="submitting"
       @confirm="handleConfirmDeploy"
     />
+    
+    <!-- 详情弹窗 -->
+    <t-dialog
+      v-model:visible="detailVisible"
+      header="HPA 详情"
+      width="800px"
+      :footer="false"
+    >
+      <div class="detail-content">
+        <pre class="yaml-content">{{ detailYaml }}</pre>
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -99,15 +111,13 @@
 import { ref, computed, onMounted } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { RefreshIcon, AddIcon, SearchIcon } from 'tdesign-icons-vue-next';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
 import { getHPAs, deleteHPA, createHPA, updateHPA, type HPA, type ResourceDiffResponse } from '@/api/k8s-resources';
 import { useClusterResourceStore } from '@/store/modules/cluster-resource';
 import HpaForm from './components/HpaForm.vue';
 import ResourceDiffDialog from './components/ResourceDiffDialog.vue';
 import * as yaml from 'js-yaml';
 
-dayjs.extend(relativeTime);
+
 
 const store = useClusterResourceStore();
 const clusterId = computed(() => store.clusterId);
@@ -121,6 +131,10 @@ const searchQuery = ref('');
 const formVisible = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
 const editingHPA = ref<HPA | null>(null);
+
+// 详情状态
+const detailVisible = ref(false);
+const detailYaml = ref('');
 
 // Diff 状态
 const diffVisible = ref(false);
@@ -174,8 +188,34 @@ function handleEdit(row: HPA) {
 }
 
 function handleDetail(row: HPA) {
-  // 可以跳转到详情页或打开抽屉，目前暂不支持
-  console.log('Detail:', row);
+  // 深拷贝并清理字段
+  const cleanHPA = JSON.parse(JSON.stringify(row));
+
+  // 1. 移除系统字段
+  if (cleanHPA.metadata) {
+    delete cleanHPA.metadata.managedFields;
+    delete cleanHPA.metadata.uid;
+    delete cleanHPA.metadata.resourceVersion;
+    delete cleanHPA.metadata.creationTimestamp;
+    delete cleanHPA.metadata.generation;
+    delete cleanHPA.metadata.selfLink;
+    delete cleanHPA.metadata.ownerReferences;
+  }
+  
+  // 3. 重新构建对象
+  const orderedHPA = {
+    apiVersion: cleanHPA.apiVersion || 'autoscaling/v2',
+    kind: cleanHPA.kind || 'HorizontalPodAutoscaler',
+    metadata: cleanHPA.metadata,
+    spec: cleanHPA.spec,
+  };
+
+  detailYaml.value = yaml.dump(orderedHPA, { 
+    indent: 2, 
+    noRefs: true,
+    sortKeys: false 
+  });
+  detailVisible.value = true;
 }
 
 async function handleDelete(row: HPA) {
@@ -217,9 +257,19 @@ async function handleConfirmDeploy() {
   }
 }
 
-function formatTime(time?: string) {
-  if (!time) return '-';
-  return dayjs(time).fromNow();
+function formatTime(timestamp?: string) {
+  if (!timestamp) return '-';
+  const now = new Date().getTime();
+  const created = new Date(timestamp).getTime();
+  const diff = now - created;
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (days > 0) return `${days}天`;
+  if (hours > 0) return `${hours}小时`;
+  return `${minutes}分钟`;
 }
 
 onMounted(() => {
@@ -253,6 +303,20 @@ onMounted(() => {
     margin-bottom: 4px;
     &:last-child {
       margin-bottom: 0;
+    }
+  }
+
+  .detail-content {
+    .yaml-content {
+      background: var(--td-bg-color-secondarycontainer);
+      padding: 16px;
+      border-radius: var(--td-radius-default);
+      font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--td-text-color-primary);
     }
   }
 }
