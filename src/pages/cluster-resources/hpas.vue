@@ -1,16 +1,16 @@
 <template>
-  <div class="hpas-container">
-    <div class="action-bar">
-      <t-space>
-        <t-button @click="loadData" :loading="loading">
+  <div class="resource-container">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <t-button theme="primary" @click="loadData" :loading="loading">
           <template #icon><refresh-icon /></template>
           刷新
         </t-button>
-        <t-button theme="primary" @click="handleCreate">
+        <t-button theme="success" @click="handleCreate">
           <template #icon><add-icon /></template>
-          HPA 部署
+          创建 HPA
         </t-button>
-      </t-space>
+      </div>
       
       <t-input
         v-model="searchQuery"
@@ -228,12 +228,19 @@ onMounted(() => {
 </script>
 
 <style lang="less" scoped>
-.hpas-container {
-  .action-bar {
+.resource-container {
+  padding: var(--td-comp-paddingTB-xxl) var(--td-comp-paddingLR-xxl);
+
+  .toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: var(--td-comp-margin-l);
+
+    .toolbar-left {
+      display: flex;
+      gap: var(--td-comp-margin-m);
+    }
   }
 
   .replica-range {

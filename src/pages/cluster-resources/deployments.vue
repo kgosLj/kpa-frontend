@@ -1,111 +1,102 @@
 <template>
   <div class="resource-container">
-    <t-card :bordered="false">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <h3>Deployments</h3>
+    <!-- 操作栏 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <t-button theme="primary" @click="fetchData">
+          <template #icon><refresh-icon /></template>
+          刷新
+        </t-button>
+        <t-button theme="success" @click="handleFormCreate">
+          <template #icon><add-icon /></template>
+          Deployment 部署
+        </t-button>
+        <t-button theme="default" @click="handleDeploy">
+          <template #icon><add-icon /></template>
+          YAML 部署
+        </t-button>
       </div>
-
-      <t-divider />
-
-      <!-- 操作栏 -->
-      <div class="toolbar">
-        <div class="toolbar-left">
-          <t-button theme="primary" @click="fetchData">
-            <template #icon><refresh-icon /></template>
-            刷新
-          </t-button>
-          <t-button theme="success" @click="handleFormCreate">
-            <template #icon><add-icon /></template>
-            Deployment部署
-          </t-button>
-          <t-button theme="default" @click="handleDeploy">
-            <template #icon><add-icon /></template>
-            YAML 部署
-          </t-button>
-        </div>
-        <t-input
-          v-model="searchKeyword"
-          placeholder="搜索 Deployment 名称"
-          clearable
-          style="width: 300px"
-        >
-          <template #suffix-icon>
-            <search-icon />
-          </template>
-        </t-input>
-      </div>
-
-      <!-- Deployment 列表 -->
-      <t-table
-        :data="filteredData"
-        :columns="COLUMNS"
-        :loading="loading"
-        row-key="metadata.name"
-        :hover="true"
+      <t-input
+        v-model="searchKeyword"
+        placeholder="搜索 Deployment 名称"
+        clearable
+        style="width: 300px"
       >
-        <template #name="{ row }">
-          <t-link theme="primary" @click="handleViewPods(row)">{{ row.metadata.name }}</t-link>
+        <template #suffix-icon>
+          <search-icon />
         </template>
-        <template #replicas="{ row }">
-          <span>{{ row.status?.readyReplicas || 0 }} / {{ row.spec?.replicas || 0 }}</span>
-        </template>
-        <template #images="{ row }">
-          <div class="image-list">
-            <t-tag
-              v-for="(image, idx) in getImages(row)"
-              :key="idx"
-              theme="default"
-              variant="outline"
-              size="small"
-            >
-              {{ image }}
-            </t-tag>
-          </div>
-        </template>
-        <template #resources="{ row }">
-          <div class="resources-info">
-            <div class="resource-item" v-for="(res, idx) in getResources(row)" :key="idx">
-              <div class="resource-label">{{ res.container }}</div>
-              <div class="resource-values">
-                <span class="resource-request" v-if="res.request">
-                  <small>Request:</small> {{ res.request }}
-                </span>
-                <span class="resource-limit" v-if="res.limit">
-                  <small>Limit:</small> {{ res.limit }}
-                </span>
-              </div>
+      </t-input>
+    </div>
+
+    <!-- Deployment 列表 -->
+    <t-table
+      :data="filteredData"
+      :columns="COLUMNS"
+      :loading="loading"
+      row-key="metadata.name"
+      :hover="true"
+    >
+      <template #name="{ row }">
+        <t-link theme="primary" @click="handleViewPods(row)">{{ row.metadata.name }}</t-link>
+      </template>
+      <template #replicas="{ row }">
+        <span>{{ row.status?.readyReplicas || 0 }} / {{ row.spec?.replicas || 0 }}</span>
+      </template>
+      <template #images="{ row }">
+        <div class="image-list">
+          <t-tag
+            v-for="(image, idx) in getImages(row)"
+            :key="idx"
+            theme="default"
+            variant="outline"
+            size="small"
+          >
+            {{ image }}
+          </t-tag>
+        </div>
+      </template>
+      <template #resources="{ row }">
+        <div class="resources-info">
+          <div class="resource-item" v-for="(res, idx) in getResources(row)" :key="idx">
+            <div class="resource-label">{{ res.container }}</div>
+            <div class="resource-values">
+              <span class="resource-request" v-if="res.request">
+                <small>Request:</small> {{ res.request }}
+              </span>
+              <span class="resource-limit" v-if="res.limit">
+                <small>Limit:</small> {{ res.limit }}
+              </span>
             </div>
           </div>
-        </template>
-        <template #status="{ row }">
-          <t-tag :theme="getStatusTheme(row)">{{ getStatus(row) }}</t-tag>
-        </template>
-        <template #age="{ row }">
-          {{ formatAge(row.metadata.creationTimestamp) }}
-        </template>
-        <template #op="{ row }">
-          <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleViewLogs(row)">查看日志</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleFormEdit(row)">表单编辑</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleEditYaml(row)">编辑YAML</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="primary" @click="handleScale(row)">扩缩容</t-link>
-          <t-divider layout="vertical" />
-          <t-link theme="success" @click="handleRedeploy(row)">重新部署</t-link>
-          <t-divider layout="vertical" />
-          <t-popconfirm
-            content="确定删除该 Deployment 吗？此操作不可恢复。"
-            @confirm="handleDelete(row)"
-          >
-            <t-link theme="danger">删除</t-link>
-          </t-popconfirm>
-        </template>
-      </t-table>
-    </t-card>
+        </div>
+      </template>
+      <template #status="{ row }">
+        <t-tag :theme="getStatusTheme(row)">{{ getStatus(row) }}</t-tag>
+      </template>
+      <template #age="{ row }">
+        {{ formatAge(row.metadata.creationTimestamp) }}
+      </template>
+      <template #op="{ row }">
+        <t-link theme="primary" @click="handleViewDetail(row)">详情</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleViewLogs(row)">查看日志</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleFormEdit(row)">表单编辑</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleEditYaml(row)">编辑YAML</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="primary" @click="handleScale(row)">扩缩容</t-link>
+        <t-divider layout="vertical" />
+        <t-link theme="success" @click="handleRedeploy(row)">重新部署</t-link>
+        <t-divider layout="vertical" />
+        <t-popconfirm
+          content="确定删除该 Deployment 吗？此操作不可恢复。"
+          @confirm="handleDelete(row)"
+        >
+          <t-link theme="danger">删除</t-link>
+        </t-popconfirm>
+      </template>
+    </t-table>
 
     <!-- 详情对话框 -->
     <t-dialog
@@ -925,21 +916,7 @@ onMounted(async () => {
   padding: var(--td-comp-paddingTB-xxl) var(--td-comp-paddingLR-xxl);
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--td-comp-margin-l);
 
-  .breadcrumb {
-    flex: 1;
-  }
-
-  .context-info {
-    display: flex;
-    gap: var(--td-comp-margin-s);
-  }
-}
 
 .toolbar {
   display: flex;

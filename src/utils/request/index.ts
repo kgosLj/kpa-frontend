@@ -238,6 +238,39 @@ const transform: AxiosTransform = {
         });
     }
 
+    // 处理其他 HTTP 错误状态码
+    if (response?.status) {
+      const status = response.status;
+      const responseData = response.data as any;
+      // 优先使用后端返回的错误信息
+      const backendMsg = responseData?.message ?? responseData?.msg ?? responseData?.error;
+
+      let msg = '';
+      switch (status) {
+        case 403:
+          msg = backendMsg ?? '无权限访问';
+          break;
+        case 404:
+          msg = backendMsg ?? '请求资源不存在';
+          break;
+        case 500:
+          msg = backendMsg ?? '服务器内部错误';
+          break;
+        case 502:
+          msg = '网关错误';
+          break;
+        case 503:
+          msg = '服务不可用';
+          break;
+        case 504:
+          msg = '网关超时';
+          break;
+        default:
+          msg = backendMsg ?? error.message;
+      }
+      error.message = msg;
+    }
+
     // 非 401 错误的重试逻辑
     if (!config || !config.requestOptions?.retry) return Promise.reject(error);
     // 不对 4xx 错误进行重试
