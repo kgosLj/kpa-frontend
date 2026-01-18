@@ -43,6 +43,15 @@ export default [
           requireAdmin: true,
         },
       },
+      {
+        path: 'image-repositories',
+        name: 'ImageRepositoryManagement',
+        component: () => import('@/pages/image-repository/index.vue'),
+        meta: {
+          title: '镜像仓库管理',
+          requireAdmin: false,
+        },
+      },
     ],
   },
 ];
