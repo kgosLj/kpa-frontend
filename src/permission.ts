@@ -89,13 +89,6 @@ router.beforeEach(async (to, from, next) => {
   }
 });
 
-router.afterEach((to) => {
-  if (to.path === '/login') {
-    const userStore = useUserStore();
-    const permissionStore = getPermissionStore();
-
-    userStore.logout();
-    permissionStore.restoreRoutes();
-  }
+router.afterEach(() => {
   NProgress.done();
 });

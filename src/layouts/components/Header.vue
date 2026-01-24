@@ -85,7 +85,7 @@ import { prefix } from '@/config/global';
 import { langList, t } from '@/locales';
 import { useLocale } from '@/locales/useLocale';
 import { getActive } from '@/router';
-import { useSettingStore, useUserStore } from '@/store';
+import { getPermissionStore, useSettingStore, useUserStore } from '@/store';
 import type { MenuRoute, ModeType } from '@/types/interface';
 
 import MenuContent from './MenuContent.vue';
@@ -165,10 +165,12 @@ const handleNav = (url: string) => {
   router.push(url);
 };
 
-const handleLogout = () => {
+const handleLogout = async () => {
+  const permissionStore = getPermissionStore();
+  await user.logout();
+  permissionStore.restoreRoutes();
   router.push({
     path: '/login',
-    query: { redirect: encodeURIComponent(router.currentRoute.value.fullPath) },
   });
 };
 
