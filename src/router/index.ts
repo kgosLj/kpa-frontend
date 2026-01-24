@@ -24,7 +24,8 @@ const defaultRouterList: Array<RouteRecordRaw> = [
   },
   {
     path: '/',
-    redirect: '/dashboard/base',
+    name: 'root',
+    component: () => import('@/pages/login/index.vue'),
   },
 ];
 // 存放固定路由

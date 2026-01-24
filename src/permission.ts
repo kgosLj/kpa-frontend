@@ -19,8 +19,9 @@ router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore();
 
   if (userStore.token) {
-    if (to.path === '/login') {
-      next();
+    // 已登录用户访问根路径或登录页，重定向到主页
+    if (to.path === '/' || to.path === '/login') {
+      next('/dashboard/base');
       return;
     }
     try {
