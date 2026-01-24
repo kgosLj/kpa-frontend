@@ -171,3 +171,51 @@ export async function getClusterResourceStats(clusterId: string): Promise<Cluste
     };
   }
 }
+
+// 时序数据点
+export interface MetricsDataPoint {
+  timestamp: number; // Unix timestamp (秒)
+  value: number;     // 指标值
+}
+
+// 时序历史数据响应
+export interface MetricsHistoryResponse {
+  metric: string;
+  values: MetricsDataPoint[];
+}
+
+/**
+ * 获取CPU使用率历史数据
+ * @param clusterId 集群 ID
+ * @param range 时间范围 (1h, 6h, 24h)
+ */
+export function getCPUHistory(clusterId: string, range: string = '1h') {
+  return request.get<MetricsHistoryResponse>({
+    url: `${Api.Metrics}/${clusterId}/metrics/history/cpu`,
+    params: { range },
+  });
+}
+
+/**
+ * 获取内存使用率历史数据
+ * @param clusterId 集群 ID
+ * @param range 时间范围 (1h, 6h, 24h)
+ */
+export function getMemoryHistory(clusterId: string, range: string = '1h') {
+  return request.get<MetricsHistoryResponse>({
+    url: `${Api.Metrics}/${clusterId}/metrics/history/memory`,
+    params: { range },
+  });
+}
+
+/**
+ * 获取Pod数量历史数据
+ * @param clusterId 集群 ID
+ * @param range 时间范围 (1h, 6h, 24h)
+ */
+export function getPodCountHistory(clusterId: string, range: string = '1h') {
+  return request.get<MetricsHistoryResponse>({
+    url: `${Api.Metrics}/${clusterId}/metrics/history/pods`,
+    params: { range },
+  });
+}

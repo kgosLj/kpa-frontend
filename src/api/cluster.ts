@@ -26,6 +26,7 @@ export interface Cluster {
   creator: string;
   status: number;
   proxy_cache_version: number;
+  prometheus_url?: string | null;
   resources?: ClusterResourceStats;
 }
 
@@ -36,6 +37,7 @@ export interface ClusterCreateRequest {
   provider: string;
   environment: string;
   region?: string;
+  prometheus_url?: string;
 }
 
 // 更新集群请求
@@ -46,6 +48,7 @@ export interface ClusterUpdateRequest {
   region?: string;
   status?: number;
   kubeconfig?: string;
+  prometheus_url?: string | null;
 }
 
 // 集群验证响应

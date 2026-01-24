@@ -17,14 +17,8 @@
           </t-input>
         </div>
       </t-row>
-      <t-table
-        :data="filteredData"
-        :columns="COLUMNS"
-        :row-key="rowKey"
-        vertical-align="top"
-        :hover="true"
-        :loading="dataLoading"
-      >
+      <t-table :data="filteredData" :columns="COLUMNS" :row-key="rowKey" vertical-align="top" :hover="true"
+        :loading="dataLoading">
         <template #status="{ row }">
           <t-tag v-if="row.status === 1" theme="success">正常</t-tag>
           <t-tag v-else-if="row.status === 0" theme="warning">未验证</t-tag>
@@ -70,13 +64,8 @@
     </t-card>
 
     <!-- 创建/编辑集群对话框 -->
-    <t-dialog
-      v-model:visible="clusterDialogVisible"
-      :header="isEdit ? '编辑集群' : '添加集群'"
-      :confirm-btn="{ content: '提交', loading: submitLoading }"
-      @confirm="onSubmitCluster"
-      width="600px"
-    >
+    <t-dialog v-model:visible="clusterDialogVisible" :header="isEdit ? '编辑集群' : '添加集群'"
+      :confirm-btn="{ content: '提交', loading: submitLoading }" @confirm="onSubmitCluster" width="600px">
       <t-form ref="formRef" :data="clusterFormData" :rules="CLUSTER_FORM_RULES" label-align="right" :label-width="100">
         <t-form-item label="集群名称" name="name">
           <t-input v-model="clusterFormData.name" placeholder="请输入集群名称" />
@@ -102,12 +91,16 @@
         <t-form-item label="地域" name="region">
           <t-input v-model="clusterFormData.region" placeholder="请输入地域，如 cn-hangzhou" />
         </t-form-item>
+        <t-form-item label="Prometheus URL" name="prometheus_url">
+          <t-input v-model="clusterFormData.prometheus_url"
+            placeholder="请输入 Prometheus 地址，如 http://prometheus-server:9090（可选）" />
+          <div class="form-item-tips">
+            <t-icon name="info-circle" /> 用于监控历史数据查询，留空则不启用历史趋势图表
+          </div>
+        </t-form-item>
         <t-form-item label="Kubeconfig" name="kubeconfig">
-          <t-textarea
-            v-model="clusterFormData.kubeconfig"
-            placeholder="请粘贴 kubeconfig 文件内容（将自动进行 base64 编码）"
-            :autosize="{ minRows: 6, maxRows: 12 }"
-          />
+          <t-textarea v-model="clusterFormData.kubeconfig" placeholder="请粘贴 kubeconfig 文件内容（将自动进行 base64 编码）"
+            :autosize="{ minRows: 6, maxRows: 12 }" />
           <div class="form-item-tips">
             <t-icon name="info-circle" /> 请粘贴原始的 kubeconfig YAML 内容，系统会自动进行 base64 编码
           </div>
@@ -177,6 +170,7 @@ const clusterFormData = ref({
   environment: '',
   region: '',
   kubeconfig: '',
+  prometheus_url: '',
 });
 
 
@@ -204,6 +198,7 @@ const handleAdd = () => {
     environment: '',
     region: '',
     kubeconfig: '',
+    prometheus_url: '',
   };
   clusterDialogVisible.value = true;
 };
@@ -218,6 +213,7 @@ const handleEdit = (row: Cluster) => {
     environment: row.environment,
     region: row.region || '',
     kubeconfig: '', // 编辑时不显示已有的 kubeconfig
+    prometheus_url: row.prometheus_url || '',
   };
   clusterDialogVisible.value = true;
 };
@@ -247,6 +243,7 @@ const onSubmitCluster = async () => {
         provider: clusterFormData.value.provider,
         environment: clusterFormData.value.environment,
         region: clusterFormData.value.region,
+        prometheus_url: clusterFormData.value.prometheus_url || null,
       };
       // 只有输入了新的 kubeconfig 才更新
       if (clusterFormData.value.kubeconfig) {
@@ -267,6 +264,7 @@ const onSubmitCluster = async () => {
         provider: clusterFormData.value.provider,
         environment: clusterFormData.value.environment,
         region: clusterFormData.value.region || undefined,
+        prometheus_url: clusterFormData.value.prometheus_url || undefined,
       });
       MessagePlugin.success('创建成功');
     }
@@ -351,5 +349,4 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
 }
-
 </style>
