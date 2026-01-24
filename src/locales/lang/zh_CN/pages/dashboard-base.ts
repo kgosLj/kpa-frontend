@@ -1,5 +1,5 @@
 export default {
-  title: '概览仪表盘',
+  title: 'Kubernetes 仪表盘',
   outputOverview: {
     title: '出入库概览',
     subtitle: '(件)',

@@ -1,289 +1,211 @@
 <template>
   <t-row :gutter="[16, 16]">
-    <t-col v-for="(item, index) in PANE_LIST" :key="item.title" :xs="6" :xl="3">
+    <t-col v-for="(item, index) in panelData" :key="item.title" :xs="12" :sm="8" :md="6" :lg="4" :xl="4">
       <t-card
-        :title="t(item.title)"
         :bordered="false"
-        class="dashboard-item"
-        :class="{ 'dashboard-item--main-color': index === 0 }"
+        class="dashboard-card"
+        :class="[`dashboard-card--${item.color}`]"
+        hover-shadow
       >
-        <div class="dashboard-item-top">
-          <span :style="{ fontSize: `${resizeTime * 28}px` }">{{ item.number }}</span>
-        </div>
-        <div class="dashboard-item-left">
-          <div
-            v-if="index === 0"
-            id="moneyContainer"
-            class="dashboard-chart-container"
-            :style="{ width: `${resizeTime * 120}px`, height: '100px', marginTop: '-24px' }"
-          ></div>
-          <div
-            v-else-if="index === 1"
-            id="refundContainer"
-            class="dashboard-chart-container"
-            :style="{ width: `${resizeTime * 120}px`, height: '56px', marginTop: '-24px' }"
-          ></div>
-          <span v-else-if="index === 2" :style="{ marginTop: `-24px` }">
-            <usergroup-icon />
-          </span>
-          <span v-else :style="{ marginTop: '-24px' }">
-            <file-icon />
-          </span>
-        </div>
-        <template #footer>
-          <div class="dashboard-item-bottom">
-            <div class="dashboard-item-block">
-              {{ t('pages.dashboardBase.topPanel.cardTips') }}
-              <trend
-                class="dashboard-item-trend"
-                :type="item.upTrend ? 'up' : 'down'"
-                :is-reverse-color="index === 0"
-                :describe="item.upTrend || item.downTrend"
-              />
+        <div class="card-content">
+          <div class="card-icon-wrapper">
+            <div class="card-icon" :class="[`card-icon--${item.color}`]">
+              <component :is="item.icon" />
             </div>
-            <t-icon name="chevron-right" />
           </div>
-        </template>
+          <div class="card-info">
+            <div class="card-subtitle">{{ item.title }}</div>
+            <t-skeleton v-if="loading" :loading="true" />
+            <div v-else class="card-value">{{ item.value }}</div>
+            <div v-if="item.desc && !loading" class="card-desc">{{ item.desc }}</div>
+          </div>
+        </div>
       </t-card>
     </t-col>
   </t-row>
 </template>
+
 <script setup lang="ts">
-import { useWindowSize } from '@vueuse/core';
-import { BarChart, LineChart } from 'echarts/charts';
-import * as echarts from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import { FileIcon, UsergroupIcon } from 'tdesign-icons-vue-next';
-import { nextTick, onMounted, ref, watch } from 'vue';
-
-// 导入样式
-import Trend from '@/components/trend/index.vue';
-import { t } from '@/locales';
-import { useSettingStore } from '@/store';
-import { changeChartsTheme } from '@/utils/color';
-
-import { constructInitDashboardDataset } from '../index';
+import { 
+  ServerIcon, 
+  LayersIcon, 
+  ViewModuleIcon,
+  ControlPlatformIcon,
+  CloudIcon,
+  DashboardIcon
+} from 'tdesign-icons-vue-next';
+import { computed } from 'vue';
+import type { ClusterMetricsResponse, ClusterResourceStats } from '@/api/dashboard';
 
 defineOptions({
-  name: 'DashboardBase',
+  name: 'TopPanel',
 });
 
-echarts.use([LineChart, BarChart, CanvasRenderer]);
+const props = defineProps<{
+  clusterId: string;
+  clusterMetrics: ClusterMetricsResponse | null;
+  resourceStats: ClusterResourceStats | null;
+  loading?: boolean;
+}>();
 
-const store = useSettingStore();
-const resizeTime = ref(1);
-
-const PANE_LIST = [
-  {
-    title: 'pages.dashboardBase.topPanel.card1',
-    number: '¥ 28,425.00',
-    upTrend: '20.5%',
-    leftType: 'echarts-line',
-  },
-  {
-    title: 'pages.dashboardBase.topPanel.card2',
-    number: '¥ 768.00',
-    downTrend: '20.5%',
-    leftType: 'echarts-bar',
-  },
-  {
-    title: 'pages.dashboardBase.topPanel.card3',
-    number: '1126',
-    upTrend: '20.5%',
-    leftType: 'icon-usergroup',
-  },
-  {
-    title: 'pages.dashboardBase.topPanel.card4',
-    number: 527,
-    downTrend: '20.5%',
-    leftType: 'icon-file-paste',
-  },
-];
-
-// moneyCharts
-let moneyContainer: HTMLElement;
-let moneyChart: echarts.ECharts;
-const renderMoneyChart = () => {
-  if (!moneyContainer) {
-    moneyContainer = document.getElementById('moneyContainer');
+// 面板数据
+const panelData = computed(() => {
+  const metrics = props.clusterMetrics;
+  const stats = props.resourceStats;
+  
+  if (!metrics || !stats) {
+    return [
+      { title: 'CPU 使用率', value: '-', desc: '正在加载...', icon: ControlPlatformIcon, color: 'blue' },
+      { title: '内存使用率', value: '-', desc: '正在加载...', icon: DashboardIcon, color: 'green' },
+      { title: '节点总数', value: '-', desc: '正在加载...', icon: ServerIcon, color: 'orange' },
+      { title: 'Pod 总数', value: '-', desc: '正在加载...', icon: LayersIcon, color: 'purple' },
+      { title: '命名空间', value: '-', desc: '正在加载...', icon: ViewModuleIcon, color: 'cyan' },
+      { title: 'Deployment', value: '-', desc: '正在加载...', icon: CloudIcon, color: 'pink' },
+    ];
   }
-  moneyChart = echarts.init(moneyContainer);
-  moneyChart.setOption(constructInitDashboardDataset('line'));
-};
 
-// refundCharts
-let refundContainer: HTMLElement;
-let refundChart: echarts.ECharts;
-const renderRefundChart = () => {
-  if (!refundContainer) {
-    refundContainer = document.getElementById('refundContainer');
-  }
-  refundChart = echarts.init(refundContainer);
-  refundChart.setOption(constructInitDashboardDataset('bar'));
-};
-
-const renderCharts = () => {
-  renderMoneyChart();
-  renderRefundChart();
-};
-
-// chartSize update
-const updateContainer = () => {
-  if (document.documentElement.clientWidth >= 1400 && document.documentElement.clientWidth < 1920) {
-    resizeTime.value = Number((document.documentElement.clientWidth / 2080).toFixed(2));
-  } else if (document.documentElement.clientWidth < 1080) {
-    resizeTime.value = Number((document.documentElement.clientWidth / 1080).toFixed(2));
-  } else {
-    resizeTime.value = 1;
-  }
-  moneyChart.resize({
-    width: resizeTime.value * 120,
-    // height: resizeTime.value * 100,
-  });
-  refundChart.resize({
-    width: resizeTime.value * 120,
-    // height: resizeTime.value * 56,
-  });
-};
-
-onMounted(() => {
-  renderCharts();
-  nextTick(() => {
-    updateContainer();
-  });
+  return [
+    {
+      title: 'CPU 使用率',
+      value: `${metrics.cpu_percentage.toFixed(1)}%`,
+      desc: `${metrics.cpu_usage} / ${metrics.cpu_total}`,
+      icon: ControlPlatformIcon,
+      color: 'blue',
+    },
+    {
+      title: '内存使用率',
+      value: `${metrics.memory_percentage.toFixed(1)}%`,
+      desc: `${metrics.memory_usage} / ${metrics.memory_total}`,
+      icon: DashboardIcon,
+      color: 'green',
+    },
+    {
+      title: '节点总数',
+      value: metrics.nodes_count.toString(),
+      desc: '集群节点数',
+      icon: ServerIcon,
+      color: 'orange',
+    },
+    {
+      title: 'Pod 总数',
+      value: stats.pod_count.toString(),
+      desc: `运行中: ${stats.pod_running}`,
+      icon: LayersIcon,
+      color: 'purple',
+    },
+    {
+      title: '命名空间',
+      value: stats.namespace_count.toString(),
+      desc: '命名空间数量',
+      icon: ViewModuleIcon,
+      color: 'cyan',
+    },
+    {
+      title: 'Deployment',
+      value: stats.deployment_count.toString(),
+      desc: `Service: ${stats.service_count}`,
+      icon: CloudIcon,
+      color: 'pink',
+    },
+  ];
 });
-
-const { width, height } = useWindowSize();
-watch([width, height], () => {
-  updateContainer();
-});
-
-watch(
-  () => store.brandTheme,
-  () => {
-    changeChartsTheme([refundChart]);
-  },
-);
-
-watch(
-  () => store.mode,
-  () => {
-    [moneyChart, refundChart].forEach((item) => {
-      item.dispose();
-    });
-
-    renderCharts();
-  },
-);
 </script>
+
 <style lang="less" scoped>
-.dashboard-item {
-  padding: var(--td-comp-paddingTB-xl) var(--td-comp-paddingLR-xxl);
+.dashboard-card {
+  height: 100%;
+  transition: all 0.3s ease;
+  border: 1px solid var(--td-component-border);
 
-  :deep(.t-card__header) {
-    padding: 0;
-  }
-
-  :deep(.t-card__footer) {
-    padding: 0;
-  }
-
-  :deep(.t-card__title) {
-    font: var(--td-font-body-medium);
-    color: var(--td-text-color-secondary);
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--td-shadow-3);
   }
 
   :deep(.t-card__body) {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    flex: 1;
-    position: relative;
-    padding: 0;
-    margin-top: var(--td-comp-margin-s);
-    margin-bottom: var(--td-comp-margin-xxl);
+    padding: var(--td-comp-paddingTB-xl) var(--td-comp-paddingLR-xl);
   }
 
-  &:hover {
-    cursor: pointer;
-  }
-
-  &-top {
+  .card-content {
     display: flex;
-    flex-direction: row;
     align-items: flex-start;
-
-    > span {
-      display: inline-block;
-      color: var(--td-text-color-primary);
-      font-size: var(--td-font-size-headline-medium);
-      line-height: var(--td-line-height-headline-medium);
-    }
+    gap: 16px;
   }
 
-  &-bottom {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-
-    > .t-icon {
-      cursor: pointer;
-      font-size: var(--td-comp-size-xxxs);
-    }
+  .card-icon-wrapper {
+    flex-shrink: 0;
   }
 
-  &-block {
+  .card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--td-text-color-placeholder);
-  }
+    font-size: 24px;
+    transition: all 0.3s ease;
 
-  &-trend {
-    margin-left: var(--td-comp-margin-s);
-  }
+    &--blue {
+      background: rgba(0, 82, 217, 0.1);
+      color: #0052d9;
+    }
 
-  &-left {
-    position: absolute;
-    top: 0;
-    right: 0;
+    &--green {
+      background: rgba(0, 168, 112, 0.1);
+      color: #00a870;
+    }
 
-    > span {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: var(--td-comp-size-xxxl);
-      height: var(--td-comp-size-xxxl);
-      background: var(--td-brand-color-light);
-      border-radius: 50%;
+    &--orange {
+      background: rgba(232, 125, 0, 0.1);
+      color: #e87d00;
+    }
 
-      .t-icon {
-        font-size: 24px;
-        color: var(--td-brand-color);
-      }
+    &--purple {
+      background: rgba(121, 70, 249, 0.1);
+      color: #7946f9;
+    }
+
+    &--cyan {
+      background: rgba(0, 191, 180, 0.1);
+      color: #00bfb4;
+    }
+
+    &--pink {
+      background: rgba(232, 70, 132, 0.1);
+      color: #e84684;
     }
   }
 
-  /* 针对第一个卡片需要反色处理 */
-  &--main-color {
-    background: var(--td-brand-color);
+  .card-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .card-subtitle {
+    font-size: 14px;
+    color: var(--td-text-color-secondary);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+
+  .card-value {
+    font-size: 28px;
+    font-weight: 600;
     color: var(--td-text-color-primary);
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
 
-    :deep(.t-card__title),
-    .dashboard-item-top span,
-    .dashboard-item-bottom {
-      color: var(--td-text-color-anti);
-    }
+  .card-desc {
+    font-size: 12px;
+    color: var(--td-text-color-placeholder);
+    line-height: 1.5;
+  }
 
-    .dashboard-item-block {
-      color: var(--td-text-color-anti);
-      opacity: 0.6;
-    }
-
-    .dashboard-item-bottom {
-      color: var(--td-text-color-anti);
-    }
+  // 悬停时图标放大
+  &:hover .card-icon {
+    transform: scale(1.1);
   }
 }
 </style>
