@@ -1,11 +1,17 @@
 <template>
   <t-card title="监控趋势" :bordered="false" class="metrics-chart-card">
     <template #actions>
-      <t-radio-group v-model="timeRange" variant="default-filled" size="small" @change="handleRangeChange">
-        <t-radio-button value="1h">1小时</t-radio-button>
-        <t-radio-button value="6h">6小时</t-radio-button>
-        <t-radio-button value="24h">24小时</t-radio-button>
-      </t-radio-group>
+      <div class="time-range-controls">
+        <t-radio-group v-model="timeRange" variant="default-filled" size="small" @change="handleRangeChange">
+          <t-radio-button value="1h">1小时</t-radio-button>
+          <t-radio-button value="6h">6小时</t-radio-button>
+          <t-radio-button value="24h">24小时</t-radio-button>
+          <t-radio-button value="custom">自定义</t-radio-button>
+        </t-radio-group>
+        <t-date-range-picker v-if="timeRange === 'custom'" v-model="customTimeRange" enable-time-picker
+          format="YYYY-MM-DD HH:mm" :clearable="false" size="small" style="margin-left: 8px; width: 320px;"
+          @change="handleCustomRangeChange" />
+      </div>
     </template>
 
     <t-loading :loading="loading" size="small">
@@ -22,6 +28,7 @@
 <script setup lang="ts">
 import { MessagePlugin } from 'tdesign-vue-next';
 import * as echarts from 'echarts';
+import dayjs from 'dayjs';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getCPUHistory, getMemoryHistory, type MetricsHistoryResponse } from '@/api/dashboard';
 
@@ -37,23 +44,18 @@ const chartContainer = ref<HTMLElement>();
 const chart = ref<echarts.ECharts>();
 const loading = ref(false);
 const timeRange = ref('1h');
+const customTimeRange = ref<[string, string]>(['', '']);
 const refreshInterval = ref<number>();
 const hasData = ref(false);
 const dataPointCount = ref(0);
 
 // 空状态消息
 const emptyMessage = computed(() => {
-  if (dataPointCount.value === 1) {
-    return '正在收集监控数据...';
-  }
-  return 'CPU 和内存使用率监控数据不可用';
+  return '监控数据暂不可用';
 });
 
 const emptyHint = computed(() => {
-  if (dataPointCount.value === 1) {
-    return 'Prometheus 正在采集数据，请等待 5-10 分钟后刷新页面';
-  }
-  return '请确保 Prometheus 已正确配置节点和容器监控';
+  return '请确保 Prometheus 已正确配置，并检查集群连接状态';
 });
 
 // 获取监控数据
@@ -62,23 +64,67 @@ const fetchMetricsHistory = async () => {
 
   loading.value = true;
   try {
+    let range = timeRange.value;
+
+    // 如果是自定义时间范围，构造 Unix 时间戳范围字符串 (start,end)
+    if (timeRange.value === 'custom' && customTimeRange.value[0] && customTimeRange.value[1]) {
+      const start = Math.floor(new Date(customTimeRange.value[0]).getTime() / 1000);
+      const end = Math.floor(new Date(customTimeRange.value[1]).getTime() / 1000);
+      range = `${start},${end}`;
+    }
+
     const [cpuRes, memoryRes] = await Promise.all([
-      getCPUHistory(props.clusterId, timeRange.value),
-      getMemoryHistory(props.clusterId, timeRange.value),
+      getCPUHistory(props.clusterId, range),
+      getMemoryHistory(props.clusterId, range),
     ]);
 
-    const totalDataPoints = cpuRes.values.length + memoryRes.values.length;
-    dataPointCount.value = totalDataPoints;
+    // 检查是否有数据
+    const hasCpuData = cpuRes && cpuRes.values && cpuRes.values.length > 0;
+    const hasMemData = memoryRes && memoryRes.values && memoryRes.values.length > 0;
 
-    // 需要至少 4 个数据点才能绘制有意义的曲线
-    // 但即使只有 1 个点，也要显示提示信息
-    if (totalDataPoints < 4) {
+    // 如果没有任何数据，不显示图表
+    if (!hasCpuData && !hasMemData) {
       hasData.value = false;
+      dataPointCount.value = 0;
+      // 如果之前有图表，清理掉以释放资源
+      if (chart.value) {
+        chart.value.dispose();
+        chart.value = undefined;
+      }
       return;
     }
 
+    const totalDataPoints = (hasCpuData ? cpuRes.values.length : 0) + (hasMemData ? memoryRes.values.length : 0);
+    dataPointCount.value = totalDataPoints;
     hasData.value = true;
+
+    // 1. 等待 v-show 使得 DOM 可见
+    await nextTick();
+
+    // 2. 只有在 DOM 可见且 chart 实例未初始化时，才进行初始化
+    if (!chart.value && chartContainer.value) {
+      chart.value = echarts.init(chartContainer.value);
+      window.addEventListener('resize', handleResize);
+    }
+
+    // 3. 此时 chart 一定存在且 DOM 可见，安全 resize
+    if (chart.value) {
+      try {
+        chart.value.resize();
+      } catch (e) {
+        console.warn('Failed to resize chart:', e);
+      }
+    }
+
+    // 4. 渲染数据
     renderChart(cpuRes, memoryRes);
+
+    // 如果是自定义时间范围，不需要定时刷新; 否则开启定时刷新
+    if (timeRange.value === 'custom') {
+      stopAutoRefresh();
+    } else {
+      startAutoRefresh();
+    }
   } catch (error) {
     console.error('Failed to fetch metrics history:', error);
     MessagePlugin.error('获取监控数据失败');
@@ -95,6 +141,36 @@ const renderChart = (cpuData: MetricsHistoryResponse, memoryData: MetricsHistory
 
   // 判断内存数据是百分比还是绝对值（MB）
   const isMemoryPercentage = memoryData.values.length > 0 && memoryData.values[0].value <= 100;
+
+  // 计算X轴的时间范围
+  let xAxisMin: number | undefined;
+  let xAxisMax: number | undefined;
+
+  // 只有在自定义时间时，强制使用用户选择的时间范围作为 X 轴边界
+  // 这样保证图表精确显示用户所选的时间段，避免数据稀疏时填满图表
+
+  const now = new Date().getTime();
+
+  switch (timeRange.value) {
+    case '1h':
+      xAxisMax = now;
+      xAxisMin = xAxisMax - 3600 * 1000;
+      break;
+    case '6h':
+      xAxisMax = now;
+      xAxisMin = xAxisMax - 6 * 3600 * 1000;
+      break;
+    case '24h':
+      xAxisMax = now;
+      xAxisMin = xAxisMax - 24 * 3600 * 1000;
+      break;
+    case 'custom':
+      if (customTimeRange.value[0] && customTimeRange.value[1]) {
+        xAxisMin = new Date(customTimeRange.value[0]).getTime();
+        xAxisMax = new Date(customTimeRange.value[1]).getTime();
+      }
+      break;
+  }
 
   const option: echarts.EChartsOption = {
     tooltip: {
@@ -128,20 +204,24 @@ const renderChart = (cpuData: MetricsHistoryResponse, memoryData: MetricsHistory
       },
     },
     grid: {
-      left: '70px',
-      right: isMemoryPercentage ? '70px' : '90px',
+      left: '3%',
+      right: isMemoryPercentage ? '3%' : '5%',
       bottom: '60px',
       top: '40px',
-      containLabel: false,
+      containLabel: true,
     },
     xAxis: {
       type: 'time',
+      min: xAxisMin,
+      max: xAxisMax,
       axisLabel: {
         formatter: (value: number) => {
-          const date = new Date(value * 1000);
+          const date = new Date(value);
           return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
         },
         fontSize: 12,
+        showMaxLabel: true,
+        showMinLabel: true,
       },
       splitLine: {
         show: true,
@@ -281,29 +361,42 @@ const renderChart = (cpuData: MetricsHistoryResponse, memoryData: MetricsHistory
 
 // 时间范围切换
 const handleRangeChange = () => {
-  fetchMetricsHistory();
+  if (timeRange.value === 'custom') {
+    // 切换到自定义时，不立即请求，等用户选好时间
+    stopAutoRefresh();
+    // 初始化自定义时间范围为最近1小时，使用 dayjs 确保使用本地时区
+    const now = dayjs();
+    const oneHourAgo = now.subtract(1, 'hour');
+    customTimeRange.value = [
+      oneHourAgo.format('YYYY-MM-DD HH:mm'),
+      now.format('YYYY-MM-DD HH:mm')
+    ];
+  } else {
+    // 切换回预设时间，重新开始自动刷新
+    startAutoRefresh();
+    fetchMetricsHistory();
+  }
 };
 
-// 初始化图表
-const initChart = () => {
-  // 使用 nextTick 确保 DOM 已经渲染
-  nextTick(() => {
-    if (!chartContainer.value) {
-      console.warn('Chart container not found');
-      return;
-    }
-
-    chart.value = echarts.init(chartContainer.value);
-
-    // 监听窗口大小变化
-    window.addEventListener('resize', handleResize);
+// 自定义时间范围变化
+const handleCustomRangeChange = () => {
+  if (customTimeRange.value && customTimeRange.value[0] && customTimeRange.value[1]) {
     fetchMetricsHistory();
+  }
+};
 
-    // 定时刷新 (30秒)
-    refreshInterval.value = window.setInterval(() => {
-      fetchMetricsHistory();
-    }, 30000);
-  });
+const startAutoRefresh = () => {
+  stopAutoRefresh();
+  refreshInterval.value = window.setInterval(() => {
+    fetchMetricsHistory();
+  }, 30000);
+};
+
+const stopAutoRefresh = () => {
+  if (refreshInterval.value) {
+    clearInterval(refreshInterval.value);
+    refreshInterval.value = undefined;
+  }
 };
 
 const handleResize = () => {
@@ -312,22 +405,23 @@ const handleResize = () => {
 
 // 清理
 const cleanup = () => {
-  if (refreshInterval.value) {
-    clearInterval(refreshInterval.value);
-  }
+  stopAutoRefresh();
   window.removeEventListener('resize', handleResize);
   chart.value?.dispose();
 };
 
 // 监听集群变化
 watch(() => props.clusterId, (newId) => {
-  if (newId && chart.value) {
+  if (newId) {
+    // ID 变化时重新获取
     fetchMetricsHistory();
   }
 });
 
+// 初始化及生命周期
 onMounted(() => {
-  initChart();
+  fetchMetricsHistory();
+  startAutoRefresh();
 });
 
 onUnmounted(() => {
@@ -342,6 +436,12 @@ onUnmounted(() => {
   :deep(.t-card__body) {
     padding: var(--td-comp-paddingTB-xl) var(--td-comp-paddingLR-xl);
   }
+}
+
+.time-range-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .chart-container {

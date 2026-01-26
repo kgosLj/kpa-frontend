@@ -10,14 +10,14 @@
       :resource-stats="resourceStats" :loading="metricsLoading" class="row-container" />
 
     <!-- 监控趋势图表和最近活动 -->
-    <t-row v-if="currentClusterId" :gutter="[16, 16]" class="row-container">
-      <t-col :xs="24" :md="12" :lg="12">
-        <metrics-chart :cluster-id="currentClusterId" />
-      </t-col>
-      <t-col :xs="24" :md="12" :lg="12">
+    <div class="dashboard-layout" v-if="currentClusterId">
+      <div class="layout-left">
         <recent-activity :cluster-id="currentClusterId" :limit="8" />
-      </t-col>
-    </t-row>
+      </div>
+      <div class="layout-right">
+        <metrics-chart :cluster-id="currentClusterId" />
+      </div>
+    </div>
 
     <!-- 节点资源使用情况 -->
     <resource-panel v-if="currentClusterId" :cluster-id="currentClusterId" class="row-container" />
@@ -90,5 +90,27 @@ onMounted(() => {
 
 .row-container:not(:last-child) {
   margin-bottom: 16px;
+}
+
+.dashboard-layout {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+
+  .layout-left,
+  .layout-right {
+    flex: 1;
+    width: 50%;
+    min-width: 0; // 防止内容撑开 flex item
+  }
+
+  @media (max-width: 992px) {
+    flex-direction: column;
+
+    .layout-left,
+    .layout-right {
+      width: 100%;
+    }
+  }
 }
 </style>

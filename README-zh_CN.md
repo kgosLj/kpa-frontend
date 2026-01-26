@@ -87,7 +87,7 @@ npm run lint:fix
 ## style格式检查
 npm run stylelint
 
-## style格式检查与自动修复
+## style格式检查与自动修复 
 npm run stylelint:fix
 ```
 
