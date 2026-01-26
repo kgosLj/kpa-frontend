@@ -13,14 +13,8 @@
           </t-input>
         </div>
       </t-row>
-      <t-table
-        :data="filteredData"
-        :columns="COLUMNS"
-        :row-key="rowKey"
-        vertical-align="top"
-        :hover="true"
-        :loading="dataLoading"
-      >
+      <t-table :data="filteredData" :columns="COLUMNS" :row-key="rowKey" vertical-align="top" :hover="true"
+        :loading="dataLoading">
         <template #status="{ row }">
           <t-tag v-if="row.status === 1" theme="success">启用</t-tag>
           <t-tag v-else theme="default">禁用</t-tag>
@@ -40,12 +34,8 @@
     </t-card>
 
     <!-- 创建/编辑项目对话框 -->
-    <t-dialog
-      v-model:visible="projectDialogVisible"
-      :header="isEdit ? '编辑项目' : '创建项目'"
-      :confirm-btn="{ content: '提交', loading: submitLoading }"
-      @confirm="onSubmitProject"
-    >
+    <t-dialog v-model:visible="projectDialogVisible" :header="isEdit ? '编辑项目' : '创建项目'"
+      :confirm-btn="{ content: '提交', loading: submitLoading }" @confirm="onSubmitProject">
       <t-form ref="formRef" :data="projectFormData" :rules="PROJECT_FORM_RULES" label-align="right" :label-width="100">
         <t-form-item label="项目名称" name="name">
           <t-input v-model="projectFormData.name" placeholder="请输入项目名称" />
@@ -63,22 +53,13 @@
     </t-dialog>
 
     <!-- 命名空间管理抽屉 -->
-    <t-drawer
-      v-model:visible="namespaceDrawerVisible"
-      :header="`管理命名空间 - ${currentProject?.name}`"
-      size="large"
-      :footer="false"
-    >
+    <t-drawer v-model:visible="namespaceDrawerVisible" :header="`管理命名空间 - ${currentProject?.name}`" size="large"
+      :footer="false">
       <div class="drawer-content">
         <div class="drawer-actions">
           <t-button @click="handleAddNamespace">绑定命名空间</t-button>
         </div>
-        <t-table
-          :data="namespaces"
-          :columns="NAMESPACE_COLUMNS"
-          row-key="id"
-          :loading="namespaceLoading"
-        >
+        <t-table :data="namespaces" :columns="NAMESPACE_COLUMNS" row-key="id" :loading="namespaceLoading">
           <template #cluster_name="{ row }">
             {{ getClusterName(row.cluster_id) }}
           </template>
@@ -98,13 +79,10 @@
     </t-drawer>
 
     <!-- 绑定命名空间对话框 -->
-    <t-dialog
-      v-model:visible="namespaceDialogVisible"
-      header="绑定命名空间"
-      :confirm-btn="{ content: '提交', loading: namespaceSubmitLoading }"
-      @confirm="onSubmitNamespace"
-    >
-      <t-form ref="namespaceFormRef" :data="namespaceFormData" :rules="NAMESPACE_FORM_RULES" label-align="right" :label-width="100">
+    <t-dialog v-model:visible="namespaceDialogVisible" header="绑定命名空间"
+      :confirm-btn="{ content: '提交', loading: namespaceSubmitLoading }" @confirm="onSubmitNamespace">
+      <t-form ref="namespaceFormRef" :data="namespaceFormData" :rules="NAMESPACE_FORM_RULES" label-align="right"
+        :label-width="100">
         <t-form-item label="集群" name="cluster_id">
           <t-select v-model="namespaceFormData.cluster_id" placeholder="请选择集群" @change="onClusterChange">
             <t-option v-for="cluster in clusters" :key="cluster.id" :value="cluster.id" :label="cluster.name" />
@@ -126,27 +104,18 @@
     </t-dialog>
 
     <!-- 成员管理抽屉 -->
-    <t-drawer
-      v-model:visible="memberDrawerVisible"
-      :header="`管理成员 - ${currentProject?.name}`"
-      size="large"
-      :footer="false"
-    >
+    <t-drawer v-model:visible="memberDrawerVisible" :header="`管理成员 - ${currentProject?.name}`" size="large"
+      :footer="false">
       <div class="drawer-content">
         <div class="drawer-actions">
           <t-button @click="handleAddMember">添加成员</t-button>
         </div>
-        <t-table
-          :data="members"
-          :columns="MEMBER_COLUMNS"
-          row-key="id"
-          :loading="memberLoading"
-        >
+        <t-table :data="members" :columns="MEMBER_COLUMNS" row-key="id" :loading="memberLoading">
           <template #username="{ row }">
-            {{ row.user?.username || row.user_id }}
+            {{ row.username || row.user_id }}
           </template>
           <template #role_name="{ row }">
-            {{ row.role?.name || '-' }}
+            {{ row.role_name || '-' }}
           </template>
           <template #op="{ row }">
             <t-popconfirm content="确定移除该成员吗？" @confirm="handleRemoveMember(row)">
@@ -158,13 +127,10 @@
     </t-drawer>
 
     <!-- 添加成员对话框 -->
-    <t-dialog
-      v-model:visible="memberDialogVisible"
-      header="添加成员"
-      :confirm-btn="{ content: '提交', loading: memberSubmitLoading }"
-      @confirm="onSubmitMember"
-    >
-      <t-form ref="memberFormRef" :data="memberFormData" :rules="MEMBER_FORM_RULES" label-align="right" :label-width="100">
+    <t-dialog v-model:visible="memberDialogVisible" header="添加成员"
+      :confirm-btn="{ content: '提交', loading: memberSubmitLoading }" @confirm="onSubmitMember">
+      <t-form ref="memberFormRef" :data="memberFormData" :rules="MEMBER_FORM_RULES" label-align="right"
+        :label-width="100">
         <t-form-item label="用户" name="user_id">
           <t-select v-model="memberFormData.user_id" placeholder="请选择用户" filterable>
             <t-option v-for="user in users" :key="user.id" :value="user.id" :label="user.username">
@@ -186,13 +152,13 @@
 import { ref, onMounted, computed } from 'vue';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { SearchIcon } from 'tdesign-icons-vue-next';
-import { 
-  getProjectList, 
-  createProject, 
+import {
+  getProjectList,
+  createProject,
   updateProject,
   deleteProject,
-  getProjectNamespaces, 
-  bindProjectNamespace, 
+  getProjectNamespaces,
+  bindProjectNamespace,
   unbindProjectNamespace,
   getProjectMembers,
   addProjectMember,
@@ -226,7 +192,7 @@ const filteredData = computed(() => {
   if (!searchName.value) {
     return data.value;
   }
-  return data.value.filter(project => 
+  return data.value.filter(project =>
     project.name.toLowerCase().includes(searchName.value.toLowerCase())
   );
 });
@@ -275,7 +241,7 @@ const namespaceFormData = ref({
 const MEMBER_COLUMNS = [
   { title: '用户名', colKey: 'username', width: 200 },
   { title: '角色', colKey: 'role_name', width: 200 },
-  { title: '加入时间', colKey: 'create_time', width: 180 },
+  { title: '加入时间', colKey: 'created_at', width: 180 },
   { title: '操作', colKey: 'op', width: 100, fixed: 'right' as const },
 ];
 
@@ -407,14 +373,14 @@ const onClusterChange = async (clusterId: string | number) => {
     availableNamespaces.value = [];
     return;
   }
-  
+
   const clusterIdStr = String(clusterId);
   namespacesLoading.value = true;
   availableNamespaces.value = []; // 清空之前的数据
-  
+
   try {
     console.log('正在加载集群命名空间:', clusterIdStr);
-    
+
     // 从 K8s API 获取命名空间列表
     const res = await request.get<any>({
       url: `/clusters/${clusterIdStr}/proxy/api/v1/namespaces`,
@@ -422,12 +388,12 @@ const onClusterChange = async (clusterId: string | number) => {
         'X-Current-Cluster': clusterIdStr,
       },
     });
-    
+
     console.log('命名空间API响应:', res);
-    
+
     // 兼容不同的响应格式
     let namespaceList: string[] = [];
-    
+
     if (res && res.items && Array.isArray(res.items)) {
       // 标准 K8s API 格式
       namespaceList = res.items
@@ -437,13 +403,13 @@ const onClusterChange = async (clusterId: string | number) => {
       // 直接返回数组
       namespaceList = res;
     }
-    
+
     console.log('解析后的命名空间列表:', namespaceList);
-    
+
     if (namespaceList.length === 0) {
       MessagePlugin.warning('该集群没有可用的命名空间');
     }
-    
+
     availableNamespaces.value = namespaceList;
   } catch (e: any) {
     console.error('加载命名空间失败:', e);
@@ -453,7 +419,7 @@ const onClusterChange = async (clusterId: string | number) => {
       status: e.response?.status,
       data: e.response?.data,
     });
-    
+
     const errorMsg = e.response?.data?.message || e.message || '加载命名空间失败';
     MessagePlugin.error(`加载命名空间失败: ${errorMsg}`);
     availableNamespaces.value = [];
@@ -470,7 +436,7 @@ const handleAddNamespace = () => {
 
 const onSubmitNamespace = async () => {
   if (!currentProject.value) return;
-  
+
   // 验证表单
   if (!namespaceFormData.value.cluster_id) {
     MessagePlugin.error('请选择集群');
@@ -484,7 +450,7 @@ const onSubmitNamespace = async () => {
     MessagePlugin.error('请选择环境');
     return;
   }
-  
+
   namespaceSubmitLoading.value = true;
   try {
     await bindProjectNamespace(currentProject.value.id, namespaceFormData.value);
@@ -558,7 +524,7 @@ const handleAddMember = () => {
 
 const onSubmitMember = async () => {
   if (!currentProject.value) return;
-  
+
   // 验证表单
   if (!memberFormData.value.user_id) {
     MessagePlugin.error('请选择用户');
@@ -568,7 +534,7 @@ const onSubmitMember = async () => {
     MessagePlugin.error('请选择角色');
     return;
   }
-  
+
   memberSubmitLoading.value = true;
   try {
     await addProjectMember(currentProject.value.id, {
