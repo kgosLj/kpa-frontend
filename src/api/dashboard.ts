@@ -219,3 +219,54 @@ export function getPodCountHistory(clusterId: string, range: string = '1h') {
     params: { range },
   });
 }
+
+// Multi-Cluster Dashboard APIs
+
+// 集群监控摘要
+export interface ClusterMetricsSummary {
+  id: string;
+  name: string;
+  environment: string;
+  provider: string;
+  region: string;
+  status: number;
+  health_score: number;           // 健康分数 0-100
+  health_status: 'healthy' | 'warning' | 'critical';
+  nodes_total: number;
+  nodes_ready: number;
+  pods_total: number;
+  pods_running: number;
+  cpu_percentage: number;
+  memory_percentage: number;
+  last_updated: string;
+}
+
+// 全局统计
+export interface GlobalStats {
+  total_clusters: number;
+  total_nodes: number;
+  total_pods: number;
+  overall_health_score: number;
+  clusters_by_env: {
+    [key: string]: number;
+  };
+  unhealthy_clusters: number;
+}
+
+/**
+ * 获取所有集群的监控摘要
+ */
+export function getAllClustersMetrics() {
+  return request.get<ClusterMetricsSummary[]>({
+    url: '/dashboard/clusters/metrics',
+  });
+}
+
+/**
+ * 获取全局统计数据
+ */
+export function getGlobalStats() {
+  return request.get<GlobalStats>({
+    url: '/dashboard/global/stats',
+  });
+}
