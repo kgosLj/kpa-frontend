@@ -12,7 +12,7 @@ const InitUserInfo: UserInfo = {
 
 export const useUserStore = defineStore('user', {
   state: () => ({
-    token: 'main_token', // 默认token不走权限
+    token: '', // 默认token为空，强制走权限验证
     refreshToken: '', // 刷新令牌，用于自动续期
     userInfo: { ...InitUserInfo },
   }),
